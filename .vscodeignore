@@ -1,0 +1,15 @@
+.git/**
+.gitignore
+.github/**
+.promptrail/**
+.vscode/**
+src/**
+node_modules/**
+eslint.config.mjs
+tsconfig.json
+PROJECT_PLAN.md
+prompt_tracking_conversation.md
+*.vsix
+*.log
+dist/**/*.map
+dist/test/**

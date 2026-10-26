@@ -1,0 +1,56 @@
+{
+  "name": "prompttrace",
+  "displayName": "PromptTrace",
+  "description": "Local-first prompt-aware file history for VS Code and Cursor.",
+  "version": "0.0.1",
+  "publisher": "prompttrace-local",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:promptTrace.runSmokeTest"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "promptTrace.runSmokeTest",
+        "title": "PromptTrace: Run Smoke Test"
+      }
+    ],
+    "configuration": {
+      "title": "PromptTrace",
+      "properties": {
+        "promptTrace.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable PromptTrace for this editor window."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "clean": "rimraf dist",
+    "compile": "tsc --project tsconfig.json",
+    "watch": "tsc --watch --project tsconfig.json",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "lint": "eslint .",
+    "test": "npm run compile && node --test --test-isolation=none dist/test/smoke.test.js",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "package": "npm run check && vsce package --allow-missing-repository --out prompttrace.vsix"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@types/node": "^22.20.0",
+    "@types/vscode": "1.95.0",
+    "@vscode/vsce": "^3.9.2",
+    "eslint": "^10.0.0",
+    "rimraf": "^6.1.3",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1"
+  }
+}
