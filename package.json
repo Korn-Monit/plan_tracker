@@ -16,7 +16,8 @@
     "onCommand:promptTrace.runSmokeTest",
     "onView:promptTrace.history",
     "onCommand:promptTrace.compareWithPrevious",
-    "onCommand:promptTrace.compareWithCurrent"
+    "onCommand:promptTrace.compareWithCurrent",
+    "onCommand:promptTrace.handleClaudeHook"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -34,6 +35,11 @@
         "command": "promptTrace.compareWithCurrent",
         "title": "PromptTrace: Compare with Current File",
         "icon": "$(diff)"
+      },
+      {
+        "command": "promptTrace.handleClaudeHook",
+        "title": "PromptTrace: Receive Claude Code Hook",
+        "enablement": "false"
       }
     ],
     "viewsContainers": {

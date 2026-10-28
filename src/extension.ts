@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 
+import { ClaudeCodeAdapter, SessionCoordinator } from "./agent";
 import { RevisionCapture } from "./capture";
 import { HistoryIndex, SnapshotStore } from "./history";
 import { getSmokeTestMessage } from "./smoke";
@@ -10,6 +11,7 @@ const SMOKE_TEST_COMMAND = "promptTrace.runSmokeTest";
 export interface PromptTraceApi {
   getHistoryIndex(): Readonly<HistoryIndex>;
   readSnapshot(snapshotId: string): Promise<string>;
+  handleClaudeHook(payload: unknown): Promise<void>;
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<PromptTraceApi | undefined> {
@@ -41,10 +43,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
       void vscode.window.showErrorMessage(message);
     });
     await capture.start();
-    context.subscriptions.push(capture);
+    const adapter = new ClaudeCodeAdapter(false);
+    const coordinator = new SessionCoordinator(store, () => capture.synchronize());
+    const handleClaudeHook = async (payload: unknown): Promise<void> => {
+      const event = adapter.adapt(payload);
+      if (event === undefined) {
+        throw new Error("PromptTrace received an invalid or unsupported Claude Code hook payload.");
+      }
+      await coordinator.accept(event);
+    };
+    const claudeHookCommand = vscode.commands.registerCommand(
+      "promptTrace.handleClaudeHook",
+      handleClaudeHook,
+    );
+    context.subscriptions.push(capture, claudeHookCommand);
     return {
       getHistoryIndex: () => store.getIndex(),
       readSnapshot: (snapshotId) => store.readSnapshot(snapshotId),
+      handleClaudeHook,
     };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

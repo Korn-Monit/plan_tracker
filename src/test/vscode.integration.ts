@@ -22,9 +22,55 @@ export async function run(): Promise<void> {
     await runRestartPhase(folder, api);
   } else if (phase === "timeline") {
     await runTimelinePhase(folder, api);
+  } else if (phase === "attribution") {
+    await runAttributionPhase(folder, api);
   } else {
     assert.fail(`Unknown integration phase: ${String(phase)}`);
   }
+}
+
+async function runAttributionPhase(folder: vscode.WorkspaceFolder, api: PromptTraceApi): Promise<void> {
+  const storedPath = `${folder.name}/baseline.md`;
+  const uri = vscode.Uri.joinPath(folder.uri, "baseline.md");
+  const beforeSnapshotId = api.getHistoryIndex().heads[storedPath]?.snapshotId;
+  assert.ok(beforeSnapshotId);
+
+  await api.handleClaudeHook({
+    session_id: "sanitized-session-1",
+    hook_event_name: "UserPromptSubmit",
+    prompt: "This text must not be persisted by default",
+  });
+  const countBeforeWrites = revisionsFor(api, storedPath).length;
+  await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode("agent intermediate\n"));
+  await waitFor(() => revisionsFor(api, storedPath).length === countBeforeWrites + 1);
+  await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode("agent final\n"));
+  await waitFor(() => revisionsFor(api, storedPath).length === countBeforeWrites + 2);
+  await api.handleClaudeHook({
+    session_id: "sanitized-session-1",
+    hook_event_name: "Stop",
+    stop_hook_active: false,
+  });
+
+  const changes = api.getHistoryIndex().changes;
+  assert.equal(changes.length, 1, "one prompt must create exactly one Change");
+  const change = changes[0];
+  assert.ok(change);
+  assert.equal(change.status, "completed");
+  assert.equal(change.attribution, "attributed");
+  assert.equal(change.promptPreview, undefined, "prompt text is metadata-only by default");
+  assert.equal(change.files.length, 1);
+  assert.equal(change.files[0]?.relativePath, storedPath);
+  assert.equal(change.files[0]?.beforeSnapshotId, beforeSnapshotId);
+  const afterSnapshotId = change.files[0]?.afterSnapshotId;
+  assert.ok(afterSnapshotId);
+  assert.equal(await api.readSnapshot(afterSnapshotId), "agent final\n");
+  assert.equal(revisionsFor(api, storedPath).slice(-2).every((revision) => revision.changeId === change.id), true);
+
+  const revisionCount = revisionsFor(api, storedPath).length;
+  await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode("manual after prompt\n"));
+  await waitFor(() => revisionsFor(api, storedPath).length === revisionCount + 1);
+  assert.equal(revisionsFor(api, storedPath).at(-1)?.changeId, undefined, "manual edits must remain unassigned");
+  assert.equal(api.getHistoryIndex().changes.length, 1);
 }
 
 async function runTimelinePhase(folder: vscode.WorkspaceFolder, api: PromptTraceApi): Promise<void> {

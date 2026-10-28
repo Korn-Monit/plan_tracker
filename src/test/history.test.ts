@@ -65,13 +65,13 @@ void test("recovers the last complete index when the primary index is corrupt", 
   await withStore(async (store, root) => {
     await store.recordContent("workspace/plan.md", "first", "baseline");
     await store.recordContent("workspace/plan.md", "second", "edited");
-    await writeFile(path.join(root, "history-v1.json"), "{incomplete", "utf8");
+    await writeFile(path.join(root, "history-v2.json"), "{incomplete", "utf8");
 
     const recovered = new SnapshotStore(root);
     await recovered.initialize();
     assert.equal(recovered.getIndex().revisions.length, 1);
     assert.equal(recovered.getHead("workspace/plan.md")?.snapshotId, hashContent("first"));
-    const repaired = JSON.parse(await readFile(path.join(root, "history-v1.json"), "utf8")) as unknown;
+    const repaired = JSON.parse(await readFile(path.join(root, "history-v2.json"), "utf8")) as unknown;
     assert.equal(typeof repaired, "object");
   });
 });

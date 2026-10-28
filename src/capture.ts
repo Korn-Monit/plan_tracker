@@ -81,6 +81,15 @@ export class RevisionCapture implements vscode.Disposable {
     }
   }
 
+  /** Flushes debounced filesystem state before an agent turn boundary is recorded. */
+  public async synchronize(): Promise<void> {
+    for (const timer of this.timers.values()) {
+      clearTimeout(timer);
+    }
+    this.timers.clear();
+    await this.scanWorkspace();
+  }
+
   private reloadConfiguration(): void {
     const configuration = vscode.workspace.getConfiguration("promptTrace");
     this.includes = configuration.get<string[]>("include", DEFAULT_INCLUDES);

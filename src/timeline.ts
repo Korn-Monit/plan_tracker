@@ -1,12 +1,12 @@
 import * as vscode from "vscode";
 
-import { HistoryIndex, Revision, SnapshotStore } from "./history";
+import { Change, FileChange, HistoryIndex, Revision, SnapshotStore } from "./history";
 
 export const SNAPSHOT_SCHEME = "prompttrace-snapshot";
 export const COMPARE_PREVIOUS_COMMAND = "promptTrace.compareWithPrevious";
 export const COMPARE_CURRENT_COMMAND = "promptTrace.compareWithCurrent";
 
-type HistoryNode = FileNode | RevisionNode;
+type HistoryNode = FileNode | RevisionNode | ChangeNode | ChangeFileNode;
 
 interface FileNode {
   type: "file";
@@ -16,6 +16,17 @@ interface FileNode {
 interface RevisionNode {
   type: "revision";
   revision: Revision;
+}
+
+interface ChangeNode {
+  type: "change";
+  change: Change;
+}
+
+interface ChangeFileNode {
+  type: "changeFile";
+  change: Change;
+  file: FileChange;
 }
 
 export class HistoryTreeProvider implements vscode.TreeDataProvider<HistoryNode>, vscode.Disposable {
@@ -33,6 +44,30 @@ export class HistoryTreeProvider implements vscode.TreeDataProvider<HistoryNode>
   }
 
   public getTreeItem(element: HistoryNode): vscode.TreeItem {
+    if (element.type === "change") {
+      const item = new vscode.TreeItem(
+        `Claude Code · ${formatTime(element.change.startedAt)}`,
+        vscode.TreeItemCollapsibleState.Expanded,
+      );
+      item.id = element.change.id;
+      item.description = `${element.change.attribution} · ${element.change.status}`;
+      item.contextValue = "promptTraceChange";
+      item.iconPath = new vscode.ThemeIcon(element.change.status === "completed" ? "sparkle" : "warning");
+      item.tooltip = `${element.change.files.length} file(s)\nAttribution: ${element.change.attribution}\nStatus: ${element.change.status}`;
+      return item;
+    }
+
+    if (element.type === "changeFile") {
+      const revision = revisionForFileChange(element.change, element.file);
+      const item = new vscode.TreeItem(displayPath(element.file.relativePath), vscode.TreeItemCollapsibleState.None);
+      item.id = revision.id;
+      item.description = workspaceName(element.file.relativePath);
+      item.contextValue = "promptTraceRevision";
+      item.iconPath = new vscode.ThemeIcon("diff");
+      item.command = { command: COMPARE_PREVIOUS_COMMAND, title: "Open prompt diff", arguments: [revision] };
+      return item;
+    }
+
     if (element.type === "file") {
       const item = new vscode.TreeItem(
         displayPath(element.relativePath),
@@ -66,13 +101,19 @@ export class HistoryTreeProvider implements vscode.TreeDataProvider<HistoryNode>
   public getChildren(element?: HistoryNode): HistoryNode[] {
     const index = this.store.getIndex();
     if (element === undefined) {
-      return pathsWithRevisions(index).map((relativePath) => ({ type: "file", relativePath }));
+      const changes: ChangeNode[] = [...index.changes].reverse().map((change) => ({ type: "change", change }));
+      const files: FileNode[] = pathsWithUnassignedRevisions(index)
+        .map((relativePath) => ({ type: "file", relativePath }));
+      return [...changes, ...files];
     }
     if (element.type === "file") {
       return [...index.revisions
-        .filter((revision) => revision.relativePath === element.relativePath)]
+        .filter((revision) => revision.relativePath === element.relativePath && revision.changeId === undefined)]
         .reverse()
         .map((revision) => ({ type: "revision", revision }));
+    }
+    if (element.type === "change") {
+      return element.change.files.map((file) => ({ type: "changeFile", change: element.change, file }));
     }
     return [];
   }
@@ -152,6 +193,10 @@ function resolveRevision(input: unknown, index: Readonly<HistoryIndex>): Revisio
     if ("type" in input && input.type === "revision" && "revision" in input) {
       return input.revision as Revision;
     }
+    if ("relativePath" in input && typeof input.relativePath === "string"
+      && "recordedAt" in input && typeof input.recordedAt === "string") {
+      return input as unknown as Revision;
+    }
     if ("id" in input && typeof input.id === "string") {
       return index.revisions.find((revision) => revision.id === input.id);
     }
@@ -184,9 +229,23 @@ function currentFileUri(storedPath: string): vscode.Uri | undefined {
   return folder === undefined ? undefined : vscode.Uri.joinPath(folder.uri, ...relativePath.split("/"));
 }
 
-function pathsWithRevisions(index: Readonly<HistoryIndex>): string[] {
-  return [...new Set(index.revisions.map((revision) => revision.relativePath))]
+function pathsWithUnassignedRevisions(index: Readonly<HistoryIndex>): string[] {
+  return [...new Set(index.revisions
+    .filter((revision) => revision.changeId === undefined)
+    .map((revision) => revision.relativePath))]
     .sort((left, right) => left.localeCompare(right));
+}
+
+function revisionForFileChange(change: Change, file: FileChange): Revision {
+  return {
+    id: `${change.id}:${file.relativePath}`,
+    relativePath: file.relativePath,
+    previousSnapshotId: file.beforeSnapshotId,
+    snapshotId: file.afterSnapshotId,
+    recordedAt: change.endedAt ?? change.startedAt,
+    kind: file.afterSnapshotId === undefined ? "deleted" : file.beforeSnapshotId === undefined ? "created" : "edited",
+    changeId: change.id,
+  };
 }
 
 function displayPath(storedPath: string): string {

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export const HISTORY_SCHEMA_VERSION = 1;
+export const HISTORY_SCHEMA_VERSION = 2;
 
 export type RevisionKind = "baseline" | "created" | "edited" | "deleted" | "renamed";
 
@@ -14,6 +14,28 @@ export interface Revision {
   previousSnapshotId?: string;
   recordedAt: string;
   kind: RevisionKind;
+  changeId?: string;
+}
+
+export type AttributionState = "attributed" | "unassigned" | "ambiguous";
+
+export interface FileChange {
+  relativePath: string;
+  beforeSnapshotId?: string;
+  afterSnapshotId?: string;
+}
+
+export interface Change {
+  id: string;
+  provider: "claude-code" | "unknown";
+  externalSessionId?: string;
+  startedAt: string;
+  endedAt?: string;
+  promptPreview?: string;
+  files: FileChange[];
+  attribution: AttributionState;
+  status: "active" | "completed" | "interrupted";
+  baselineHeads?: Record<string, FileHead>;
 }
 
 interface FileHead {
@@ -22,15 +44,17 @@ interface FileHead {
 }
 
 export interface HistoryIndex {
-  schemaVersion: 1;
+  schemaVersion: 2;
   revisions: Revision[];
   heads: Record<string, FileHead>;
+  changes: Change[];
 }
 
 const EMPTY_INDEX: HistoryIndex = {
   schemaVersion: HISTORY_SCHEMA_VERSION,
   revisions: [],
   heads: {},
+  changes: [],
 };
 
 export class SnapshotStore {
@@ -43,9 +67,9 @@ export class SnapshotStore {
   private readonly changeListeners = new Set<() => void>();
 
   public constructor(rootPath: string) {
-    this.indexPath = path.join(rootPath, "history-v1.json");
-    this.backupPath = path.join(rootPath, "history-v1.backup.json");
-    this.temporaryPath = path.join(rootPath, "history-v1.pending.json");
+    this.indexPath = path.join(rootPath, "history-v2.json");
+    this.backupPath = path.join(rootPath, "history-v2.backup.json");
+    this.temporaryPath = path.join(rootPath, "history-v2.pending.json");
     this.snapshotsPath = path.join(rootPath, "snapshots");
   }
 
@@ -60,6 +84,13 @@ export class SnapshotStore {
     const backup = await this.readIndex(this.backupPath);
     if (backup !== undefined) {
       this.index = backup;
+      await this.persist(false);
+      return;
+    }
+
+    const legacy = await this.readLegacyIndex(path.join(path.dirname(this.indexPath), "history-v1.json"));
+    if (legacy !== undefined) {
+      this.index = legacy;
       await this.persist(false);
       return;
     }
@@ -80,6 +111,49 @@ export class SnapshotStore {
   public getHead(relativePath: string): Readonly<FileHead> | undefined {
     const head = this.index.heads[relativePath];
     return head === undefined ? undefined : { ...head };
+  }
+
+  public async beginChange(input: {
+    provider: "claude-code";
+    externalSessionId: string;
+    startedAt: string;
+    promptPreview?: string;
+  }): Promise<Change> {
+    return this.enqueue(async () => {
+      const active = this.index.changes.find((change) => change.status === "active");
+      let attribution: AttributionState = "attributed";
+      if (active !== undefined) {
+        active.status = "interrupted";
+        active.endedAt = input.startedAt;
+        active.attribution = "ambiguous";
+        active.files = this.fileChanges(active.baselineHeads ?? {});
+        delete active.baselineHeads;
+        attribution = "ambiguous";
+      }
+      const change: Change = {
+        id: randomUUID(),
+        provider: input.provider,
+        externalSessionId: input.externalSessionId,
+        startedAt: input.startedAt,
+        promptPreview: input.promptPreview,
+        files: [],
+        attribution,
+        status: "active",
+        baselineHeads: structuredClone(this.index.heads),
+      };
+      this.index.changes.push(change);
+      await this.persist();
+      this.notifyChanged();
+      return structuredClone(change);
+    });
+  }
+
+  public async completeChange(externalSessionId: string, endedAt: string): Promise<Change | undefined> {
+    return this.finalizeChange(externalSessionId, endedAt, "completed");
+  }
+
+  public async interruptChange(externalSessionId: string, endedAt: string): Promise<Change | undefined> {
+    return this.finalizeChange(externalSessionId, endedAt, "interrupted");
   }
 
   public async readSnapshot(snapshotId: string): Promise<string> {
@@ -106,6 +180,7 @@ export class SnapshotStore {
         previousSnapshotId: current?.snapshotId,
         recordedAt: new Date().toISOString(),
         kind: current === undefined ? kind : current.deleted ? "created" : kind,
+        changeId: this.activeChange()?.id,
       };
       this.index.revisions.push(revision);
       this.index.heads[relativePath] = { snapshotId, deleted: false };
@@ -128,6 +203,7 @@ export class SnapshotStore {
         previousSnapshotId: current.snapshotId,
         recordedAt: new Date().toISOString(),
         kind: "deleted",
+        changeId: this.activeChange()?.id,
       };
       this.index.revisions.push(revision);
       this.index.heads[relativePath] = { snapshotId: current.snapshotId, deleted: true };
@@ -154,6 +230,7 @@ export class SnapshotStore {
         previousSnapshotId: previous.snapshotId,
         recordedAt: new Date().toISOString(),
         kind: "renamed",
+        changeId: this.activeChange()?.id,
       };
       this.index.revisions.push(revision);
       this.index.heads[previousPath] = { snapshotId: previous.snapshotId, deleted: true };
@@ -173,6 +250,7 @@ export class SnapshotStore {
       snapshotId,
       recordedAt: new Date().toISOString(),
       kind,
+      changeId: this.activeChange()?.id,
     };
     this.index.revisions.push(revision);
     this.index.heads[relativePath] = { snapshotId, deleted: false };
@@ -185,6 +263,45 @@ export class SnapshotStore {
     for (const listener of this.changeListeners) {
       listener();
     }
+  }
+
+  private activeChange(): Change | undefined {
+    return this.index.changes.find((change) => change.status === "active");
+  }
+
+  private finalizeChange(
+    externalSessionId: string,
+    endedAt: string,
+    status: "completed" | "interrupted",
+  ): Promise<Change | undefined> {
+    return this.enqueue(async () => {
+      const change = this.index.changes.find((candidate) => candidate.status === "active"
+        && candidate.externalSessionId === externalSessionId);
+      if (change === undefined) {
+        return undefined;
+      }
+      change.endedAt = endedAt;
+      change.status = status;
+      change.files = this.fileChanges(change.baselineHeads ?? {});
+      delete change.baselineHeads;
+      await this.persist();
+      this.notifyChanged();
+      return structuredClone(change);
+    });
+  }
+
+  private fileChanges(baseline: Record<string, FileHead>): FileChange[] {
+    const paths = new Set([...Object.keys(baseline), ...Object.keys(this.index.heads)]);
+    return [...paths].sort().flatMap((relativePath) => {
+      const before = baseline[relativePath];
+      const after = this.index.heads[relativePath];
+      const beforeSnapshotId = before?.deleted === false ? before.snapshotId : undefined;
+      const afterSnapshotId = after?.deleted === false ? after.snapshotId : undefined;
+      if (beforeSnapshotId === afterSnapshotId) {
+        return [];
+      }
+      return [{ relativePath, beforeSnapshotId, afterSnapshotId }];
+    });
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -200,6 +317,29 @@ export class SnapshotStore {
         return undefined;
       }
       return parsed;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async readLegacyIndex(filePath: string): Promise<HistoryIndex | undefined> {
+    try {
+      const parsed = JSON.parse(await readFile(filePath, "utf8")) as {
+        schemaVersion?: unknown;
+        revisions?: unknown;
+        heads?: unknown;
+      };
+      if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.revisions)
+        || !parsed.revisions.every(isRevision) || typeof parsed.heads !== "object" || parsed.heads === null
+        || !Object.values(parsed.heads).every(isFileHead)) {
+        return undefined;
+      }
+      return {
+        schemaVersion: HISTORY_SCHEMA_VERSION,
+        revisions: parsed.revisions,
+        heads: parsed.heads as Record<string, FileHead>,
+        changes: [],
+      };
     } catch {
       return undefined;
     }
@@ -255,6 +395,8 @@ function isHistoryIndex(value: unknown): value is HistoryIndex {
   if (candidate.schemaVersion !== HISTORY_SCHEMA_VERSION
     || !Array.isArray(candidate.revisions)
     || !candidate.revisions.every(isRevision)
+    || !Array.isArray(candidate.changes)
+    || !candidate.changes.every(isChange)
     || typeof candidate.heads !== "object"
     || candidate.heads === null) {
     return false;
@@ -275,7 +417,30 @@ function isRevision(value: unknown): value is Revision {
     && kinds.includes(revision.kind)
     && (revision.snapshotId === undefined || typeof revision.snapshotId === "string")
     && (revision.previousSnapshotId === undefined || typeof revision.previousSnapshotId === "string")
-    && (revision.previousPath === undefined || typeof revision.previousPath === "string");
+    && (revision.previousPath === undefined || typeof revision.previousPath === "string")
+    && (revision.changeId === undefined || typeof revision.changeId === "string");
+}
+
+function isChange(value: unknown): value is Change {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const change = value as Partial<Change>;
+  return typeof change.id === "string"
+    && (change.provider === "claude-code" || change.provider === "unknown")
+    && typeof change.startedAt === "string"
+    && (change.endedAt === undefined || typeof change.endedAt === "string")
+    && (change.externalSessionId === undefined || typeof change.externalSessionId === "string")
+    && (change.promptPreview === undefined || typeof change.promptPreview === "string")
+    && (change.attribution === "attributed" || change.attribution === "unassigned" || change.attribution === "ambiguous")
+    && (change.status === "active" || change.status === "completed" || change.status === "interrupted")
+    && Array.isArray(change.files)
+    && change.files.every((file) => typeof file === "object" && file !== null
+      && typeof file.relativePath === "string"
+      && (file.beforeSnapshotId === undefined || typeof file.beforeSnapshotId === "string")
+      && (file.afterSnapshotId === undefined || typeof file.afterSnapshotId === "string"))
+    && (change.baselineHeads === undefined || (typeof change.baselineHeads === "object"
+      && change.baselineHeads !== null && Object.values(change.baselineHeads).every(isFileHead)));
 }
 
 function isFileHead(value: unknown): value is FileHead {

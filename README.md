@@ -1,6 +1,6 @@
 # PromptTrace
 
-PromptTrace is a local-first VS Code/Cursor extension for reviewing file history and, in a later phase, the changes made during each AI-agent prompt. It captures durable Markdown revisions independently of any agent integration and exposes them in a native VS Code history and diff workflow.
+PromptTrace is a local-first VS Code/Cursor extension for reviewing file history and the changes made during each Claude Code prompt. It captures durable Markdown revisions independently of attribution and exposes them in a native VS Code history and diff workflow.
 
 ## Markdown history
 
@@ -8,7 +8,9 @@ When enabled, PromptTrace scans the open workspace and stores the initial conten
 
 History lives in VS Code's workspace-scoped extension `storageUri`, outside the project, as a schema-versioned JSON index plus immutable SHA-256-addressed snapshot files. PromptTrace recovers from a malformed or incomplete primary index using its last complete backup.
 
-Open the PromptTrace Activity Bar view to browse revisions grouped by file. Select a revision to compare it with its predecessor, or use its inline action to compare it with the current workspace file. Stored snapshots open through a read-only virtual-document provider in VS Code's native side-by-side diff editor. Revisions are marked `unassigned` until prompt attribution is added in Phase 3.
+Open the PromptTrace Activity Bar view to browse prompt-level Changes and unassigned revisions grouped by file. Select a revision to compare it with its predecessor, or use its inline action to compare it with the current workspace file. Stored snapshots open through a read-only virtual-document provider in VS Code's native side-by-side diff editor.
+
+Claude Code `UserPromptSubmit` and `Stop` hook payloads are normalized behind a provider-neutral adapter. All revisions between those boundaries are shown as one Change with a net before/after diff per file. Prompt text is not stored by default; manual edits remain `unassigned`, interrupted sessions remain recoverable, and overlapping turns are labeled `ambiguous`.
 
 The settings are:
 
@@ -29,7 +31,7 @@ npm run test:vscode
 
 Press `F5` in VS Code or Cursor and choose **Run PromptTrace Extension** to launch an Extension Development Host. In that host, open the Command Palette and run **PromptTrace: Run Smoke Test**.
 
-`npm run test:vscode` uses VS Code's official Electron test harness to run capture and restart validation in two isolated VS Code processes.
+`npm run test:vscode` uses VS Code's official Electron test harness to run capture, restart, timeline, and Claude attribution validation in isolated VS Code processes.
 
 Create an installable VSIX with:
 
@@ -63,3 +65,12 @@ Run the following in both VS Code and Cursor:
 - [ ] Select baseline, edited, renamed, and deleted revisions and verify the native diff shows the correct before/after contents.
 - [ ] Use **Compare with Current File** on an older revision and verify the right side is the current workspace file.
 - [ ] Confirm stored snapshot editors are read-only and missing current files produce an actionable error.
+
+## Manual Phase 3 checklist
+
+- [ ] Send sanitized `UserPromptSubmit` and `Stop` payloads through `promptTrace.handleClaudeHook` around a Claude turn.
+- [ ] Confirm repeated writes to one Markdown file appear as one completed Change with one net diff.
+- [ ] Confirm a prompt touching multiple Markdown files has one file entry for each final net change.
+- [ ] Make a manual edit after the turn and confirm it remains unassigned.
+- [ ] End a session without `Stop` and confirm the active Change is visibly interrupted; overlap two starts and confirm ambiguity is visible.
+- [ ] Inspect workspace storage and confirm full prompt text was not persisted.
