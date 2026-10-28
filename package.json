@@ -13,7 +13,10 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onCommand:promptTrace.runSmokeTest"
+    "onCommand:promptTrace.runSmokeTest",
+    "onView:promptTrace.history",
+    "onCommand:promptTrace.compareWithPrevious",
+    "onCommand:promptTrace.compareWithCurrent"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -21,8 +24,57 @@
       {
         "command": "promptTrace.runSmokeTest",
         "title": "PromptTrace: Run Smoke Test"
+      },
+      {
+        "command": "promptTrace.compareWithPrevious",
+        "title": "PromptTrace: Compare with Previous Revision",
+        "icon": "$(compare-changes)"
+      },
+      {
+        "command": "promptTrace.compareWithCurrent",
+        "title": "PromptTrace: Compare with Current File",
+        "icon": "$(diff)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "promptTrace",
+          "title": "PromptTrace",
+          "icon": "resources/prompttrace.svg"
+        }
+      ]
+    },
+    "views": {
+      "promptTrace": [
+        {
+          "id": "promptTrace.history",
+          "name": "History",
+          "icon": "resources/prompttrace.svg",
+          "contextualTitle": "PromptTrace History"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "promptTrace.history",
+        "contents": "No Markdown history has been recorded yet.\n\nSave a Markdown file in this workspace to create a revision."
+      }
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "promptTrace.compareWithPrevious",
+          "when": "view == promptTrace.history && viewItem == promptTraceRevision",
+          "group": "inline@1"
+        },
+        {
+          "command": "promptTrace.compareWithCurrent",
+          "when": "view == promptTrace.history && viewItem == promptTraceRevision",
+          "group": "inline@2"
+        }
+      ]
+    },
     "configuration": {
       "title": "PromptTrace",
       "properties": {

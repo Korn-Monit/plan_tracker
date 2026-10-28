@@ -40,6 +40,7 @@ export class SnapshotStore {
   private readonly snapshotsPath: string;
   private index: HistoryIndex = structuredClone(EMPTY_INDEX);
   private writeQueue: Promise<void> = Promise.resolve();
+  private readonly changeListeners = new Set<() => void>();
 
   public constructor(rootPath: string) {
     this.indexPath = path.join(rootPath, "history-v1.json");
@@ -69,6 +70,11 @@ export class SnapshotStore {
 
   public getIndex(): Readonly<HistoryIndex> {
     return structuredClone(this.index);
+  }
+
+  public onDidChange(listener: () => void): { dispose(): void } {
+    this.changeListeners.add(listener);
+    return { dispose: () => this.changeListeners.delete(listener) };
   }
 
   public getHead(relativePath: string): Readonly<FileHead> | undefined {
@@ -104,6 +110,7 @@ export class SnapshotStore {
       this.index.revisions.push(revision);
       this.index.heads[relativePath] = { snapshotId, deleted: false };
       await this.persist();
+      this.notifyChanged();
       return revision;
     });
   }
@@ -125,6 +132,7 @@ export class SnapshotStore {
       this.index.revisions.push(revision);
       this.index.heads[relativePath] = { snapshotId: current.snapshotId, deleted: true };
       await this.persist();
+      this.notifyChanged();
       return revision;
     });
   }
@@ -151,6 +159,7 @@ export class SnapshotStore {
       this.index.heads[previousPath] = { snapshotId: previous.snapshotId, deleted: true };
       this.index.heads[relativePath] = { snapshotId, deleted: false };
       await this.persist();
+      this.notifyChanged();
       return revision;
     });
   }
@@ -168,7 +177,14 @@ export class SnapshotStore {
     this.index.revisions.push(revision);
     this.index.heads[relativePath] = { snapshotId, deleted: false };
     await this.persist();
+    this.notifyChanged();
     return revision;
+  }
+
+  private notifyChanged(): void {
+    for (const listener of this.changeListeners) {
+      listener();
+    }
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {

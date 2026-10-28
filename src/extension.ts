@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { RevisionCapture } from "./capture";
 import { HistoryIndex, SnapshotStore } from "./history";
 import { getSmokeTestMessage } from "./smoke";
+import { registerTimeline } from "./timeline";
 
 const SMOKE_TEST_COMMAND = "promptTrace.runSmokeTest";
 
@@ -35,6 +36,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
   try {
     const store = new SnapshotStore(context.storageUri.fsPath);
     await store.initialize();
+    registerTimeline(context, store);
     const capture = new RevisionCapture(store, (message) => {
       void vscode.window.showErrorMessage(message);
     });

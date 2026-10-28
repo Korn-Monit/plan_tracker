@@ -1,12 +1,14 @@
 # PromptTrace
 
-PromptTrace is a local-first VS Code/Cursor extension for reviewing file history and, in a later phase, the changes made during each AI-agent prompt. Phase 1 captures durable Markdown revisions independently of any agent integration.
+PromptTrace is a local-first VS Code/Cursor extension for reviewing file history and, in a later phase, the changes made during each AI-agent prompt. It captures durable Markdown revisions independently of any agent integration and exposes them in a native VS Code history and diff workflow.
 
 ## Markdown history
 
 When enabled, PromptTrace scans the open workspace and stores the initial contents of matching files as baselines. Later editor saves and filesystem create/change/delete/rename events produce ordered revisions. Content-identical events are ignored.
 
-History lives in VS Code's workspace-scoped extension `storageUri`, outside the project, as a schema-versioned JSON index plus immutable SHA-256-addressed snapshot files. PromptTrace recovers from a malformed or incomplete primary index using its last complete backup. There is intentionally no history UI yet; timeline, comparison, and restore are Phase 2 and Phase 4 work.
+History lives in VS Code's workspace-scoped extension `storageUri`, outside the project, as a schema-versioned JSON index plus immutable SHA-256-addressed snapshot files. PromptTrace recovers from a malformed or incomplete primary index using its last complete backup.
+
+Open the PromptTrace Activity Bar view to browse revisions grouped by file. Select a revision to compare it with its predecessor, or use its inline action to compare it with the current workspace file. Stored snapshots open through a read-only virtual-document provider in VS Code's native side-by-side diff editor. Revisions are marked `unassigned` until prompt attribution is added in Phase 3.
 
 The settings are:
 
@@ -54,3 +56,10 @@ Run the following in both VS Code and Cursor:
 - [ ] Verify excluded folders do not appear in the history index.
 - [ ] Reload the Extension Development Host, make another edit, and verify all distinct saved snapshots remain in order.
 - [ ] Repeat the restart/capture scenario in Cursor before declaring cross-editor validation complete.
+
+## Manual Phase 2 checklist
+
+- [ ] Open the PromptTrace Activity Bar view and confirm tracked files and newest-first revision labels appear.
+- [ ] Select baseline, edited, renamed, and deleted revisions and verify the native diff shows the correct before/after contents.
+- [ ] Use **Compare with Current File** on an older revision and verify the right side is the current workspace file.
+- [ ] Confirm stored snapshot editors are read-only and missing current files produce an actionable error.

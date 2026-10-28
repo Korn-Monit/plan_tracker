@@ -20,9 +20,40 @@ export async function run(): Promise<void> {
     await runCapturePhase(folder, api);
   } else if (phase === "restart") {
     await runRestartPhase(folder, api);
+  } else if (phase === "timeline") {
+    await runTimelinePhase(folder, api);
   } else {
     assert.fail(`Unknown integration phase: ${String(phase)}`);
   }
+}
+
+async function runTimelinePhase(folder: vscode.WorkspaceFolder, api: PromptTraceApi): Promise<void> {
+  const baselinePath = `${folder.name}/baseline.md`;
+  const revisions = revisionsFor(api, baselinePath);
+  assert.equal(revisions.length, 6, "timeline test requires the persisted Phase 1 revisions");
+  const latest = revisions.at(-1);
+  assert.ok(latest?.snapshotId);
+  assert.ok(latest.previousSnapshotId);
+
+  const registeredCommands = await vscode.commands.getCommands(true);
+  assert.ok(registeredCommands.includes("promptTrace.compareWithPrevious"));
+  assert.ok(registeredCommands.includes("promptTrace.compareWithCurrent"));
+
+  void vscode.commands.executeCommand("promptTrace.compareWithPrevious", latest.id);
+  const previousDiff = await waitForDiffTab();
+  assert.equal(previousDiff.original.scheme, "prompttrace-snapshot");
+  assert.equal(previousDiff.modified.scheme, "prompttrace-snapshot");
+  const beforeDocument = await vscode.workspace.openTextDocument(previousDiff.original);
+  const afterDocument = await vscode.workspace.openTextDocument(previousDiff.modified);
+  assert.equal(beforeDocument.getText(), await api.readSnapshot(latest.previousSnapshotId));
+  assert.equal(afterDocument.getText(), "after restart\n");
+  assert.equal(afterDocument.isDirty, false);
+
+  void vscode.commands.executeCommand("promptTrace.compareWithCurrent", latest.id);
+  const currentDiff = await waitForDiffTab("file");
+  assert.equal(currentDiff.original.scheme, "prompttrace-snapshot");
+  assert.equal(currentDiff.modified.scheme, "file");
+  assert.equal(currentDiff.modified.fsPath, vscode.Uri.joinPath(folder.uri, "baseline.md").fsPath);
 }
 
 async function runCapturePhase(folder: vscode.WorkspaceFolder, api: PromptTraceApi): Promise<void> {
@@ -88,4 +119,21 @@ async function waitFor(predicate: () => boolean): Promise<void> {
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+}
+
+async function waitForDiffTab(modifiedScheme?: string): Promise<vscode.TabInputTextDiff> {
+  let input: vscode.TabInputTextDiff | undefined;
+  await waitFor(() => {
+    const candidate = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+    if (!(candidate instanceof vscode.TabInputTextDiff)) {
+      return false;
+    }
+    if (modifiedScheme !== undefined && candidate.modified.scheme !== modifiedScheme) {
+      return false;
+    }
+    input = candidate;
+    return true;
+  });
+  assert.ok(input);
+  return input;
 }

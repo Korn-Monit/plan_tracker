@@ -7,8 +7,9 @@ async function main(): Promise<void> {
   delete process.env["ELECTRON_RUN_AS_NODE"];
   const projectRoot = path.resolve(__dirname, "../..");
   const testRoot = path.join(projectRoot, ".vscode-test");
-  const workspacePath = path.join(testRoot, "phase1-workspace");
-  const userDataPath = path.join(testRoot, "phase1-profile");
+  const runId = `run-${process.pid}-${Date.now()}`;
+  const workspacePath = path.join(testRoot, runId, "workspace");
+  const userDataPath = path.join(testRoot, runId, "profile");
   const extensionTestsPath = path.join(__dirname, "vscode.integration.js");
   await rm(userDataPath, { recursive: true, force: true });
   await rm(workspacePath, { recursive: true, force: true });
@@ -16,7 +17,7 @@ async function main(): Promise<void> {
   await writeFile(path.join(workspacePath, "baseline.md"), "baseline\n", "utf8");
   await writeFile(path.join(workspacePath, "node_modules", "excluded.md"), "must not be captured\n", "utf8");
 
-  for (const phase of ["capture", "restart"]) {
+  for (const phase of ["capture", "restart", "timeline"]) {
     await runTests({
       extensionDevelopmentPath: projectRoot,
       extensionTestsPath,
