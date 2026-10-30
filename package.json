@@ -17,6 +17,7 @@
     "onView:promptTrace.history",
     "onCommand:promptTrace.compareWithPrevious",
     "onCommand:promptTrace.compareWithCurrent",
+    "onCommand:promptTrace.restoreRevision",
     "onCommand:promptTrace.handleClaudeHook"
   ],
   "main": "./dist/extension.js",
@@ -40,6 +41,11 @@
         "command": "promptTrace.handleClaudeHook",
         "title": "PromptTrace: Receive Claude Code Hook",
         "enablement": "false"
+      },
+      {
+        "command": "promptTrace.restoreRevision",
+        "title": "PromptTrace: Restore Revision",
+        "icon": "$(discard)"
       }
     ],
     "viewsContainers": {
@@ -78,6 +84,11 @@
           "command": "promptTrace.compareWithCurrent",
           "when": "view == promptTrace.history && viewItem == promptTraceRevision",
           "group": "inline@2"
+        },
+        {
+          "command": "promptTrace.restoreRevision",
+          "when": "view == promptTrace.history && viewItem == promptTraceRevision",
+          "group": "navigation@3"
         }
       ]
     },

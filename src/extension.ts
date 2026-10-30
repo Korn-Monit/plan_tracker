@@ -4,6 +4,7 @@ import { ClaudeCodeAdapter, SessionCoordinator } from "./agent";
 import { RevisionCapture } from "./capture";
 import { HistoryIndex, SnapshotStore } from "./history";
 import { getSmokeTestMessage } from "./smoke";
+import { RESTORE_COMMAND, RestoreService } from "./restore";
 import { registerTimeline } from "./timeline";
 
 const SMOKE_TEST_COMMAND = "promptTrace.runSmokeTest";
@@ -39,6 +40,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
     const store = new SnapshotStore(context.storageUri.fsPath);
     await store.initialize();
     registerTimeline(context, store);
+    const restore = new RestoreService(store);
+    const restoreCommand = vscode.commands.registerCommand(RESTORE_COMMAND, async (input: unknown) => {
+      const revision = resolveRevision(input, store.getIndex());
+      if (revision === undefined) {
+        await vscode.window.showErrorMessage("PromptTrace could not find that revision. Refresh the History view and try again.");
+        return;
+      }
+      await restore.restore(revision);
+    });
     const capture = new RevisionCapture(store, (message) => {
       void vscode.window.showErrorMessage(message);
     });
@@ -56,7 +66,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
       "promptTrace.handleClaudeHook",
       handleClaudeHook,
     );
-    context.subscriptions.push(capture, claudeHookCommand);
+    context.subscriptions.push(capture, claudeHookCommand, restoreCommand);
     return {
       getHistoryIndex: () => store.getIndex(),
       readSnapshot: (snapshotId) => store.readSnapshot(snapshotId),
@@ -67,6 +77,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
     await vscode.window.showErrorMessage(`PromptTrace could not start history capture: ${message}`);
     return undefined;
   }
+}
+
+function resolveRevision(input: unknown, index: Readonly<HistoryIndex>): HistoryIndex["revisions"][number] | undefined {
+  if (typeof input === "string") {
+    return index.revisions.find((revision) => revision.id === input);
+  }
+  if (typeof input === "object" && input !== null) {
+    if ("relativePath" in input && typeof input.relativePath === "string"
+      && "recordedAt" in input && typeof input.recordedAt === "string") {
+      return input as HistoryIndex["revisions"][number];
+    }
+    if ("id" in input && typeof input.id === "string") {
+      return index.revisions.find((revision) => revision.id === input.id);
+    }
+  }
+  return undefined;
 }
 
 export function deactivate(): void {

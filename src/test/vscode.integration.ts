@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import * as vscode from "vscode";
 
 import type { PromptTraceApi } from "../extension";
+import { SnapshotStore, hashContent } from "../history";
+import { RestoreService, RestoreUI } from "../restore";
 
 const EXTENSION_ID = "prompttrace-local.prompttrace";
 const TIMEOUT_MS = 10_000;
@@ -24,8 +29,86 @@ export async function run(): Promise<void> {
     await runTimelinePhase(folder, api);
   } else if (phase === "attribution") {
     await runAttributionPhase(folder, api);
+  } else if (phase === "restore") {
+    await runRestorePhase(folder);
   } else {
     assert.fail(`Unknown integration phase: ${String(phase)}`);
+  }
+}
+
+async function runRestorePhase(folder: vscode.WorkspaceFolder): Promise<void> {
+  const commands = await vscode.commands.getCommands(true);
+  assert.ok(commands.includes("promptTrace.restoreRevision"));
+
+  const storeRoot = await mkdtemp(path.join(tmpdir(), "prompttrace-restore-test-"));
+  const originalUri = vscode.Uri.joinPath(folder.uri, "restore-test.md");
+  const renamedUri = vscode.Uri.joinPath(folder.uri, "restore-test-renamed.md");
+  const storedPath = `${folder.name}/restore-test.md`;
+  const confirmations: Array<{ message: string; detail: string }> = [];
+  const errors: string[] = [];
+  const successes: string[] = [];
+  const ui: RestoreUI = {
+    async confirm(message, detail) {
+      confirmations.push({ message, detail });
+      return true;
+    },
+    async success(message) {
+      successes.push(message);
+      return false;
+    },
+    async error(message) {
+      errors.push(message);
+    },
+  };
+
+  try {
+    const store = new SnapshotStore(storeRoot);
+    await store.initialize();
+    const oldRevision = await store.recordContent(storedPath, "historical\n", "baseline");
+    assert.ok(oldRevision);
+    const currentRevision = await store.recordContent(storedPath, "current work\n", "edited");
+    assert.ok(currentRevision);
+    await vscode.workspace.fs.writeFile(originalUri, new TextEncoder().encode("current work\n"));
+
+    const service = new RestoreService(store, ui);
+    const restored = await service.restore(oldRevision);
+    assert.equal(restored.status, "restored");
+    assert.equal(decode(await vscode.workspace.fs.readFile(originalUri)), "historical\n");
+    assert.equal(restored.status === "restored" ? restored.safetySnapshotId : undefined, hashContent("current work\n"));
+    assert.equal(store.getIndex().revisions.at(-1)?.previousSnapshotId, hashContent("current work\n"));
+    assert.match(confirmations[0]?.message ?? "", /restore-test\.md/u);
+    assert.match(confirmations[0]?.message ?? "", new RegExp(new Date(oldRevision.recordedAt).getFullYear().toString(), "u"));
+    assert.match(confirmations[0]?.detail ?? "", /replaced.*safety snapshot/iu);
+    assert.equal(successes.length, 1);
+
+    const undone = await service.restore(currentRevision);
+    assert.equal(undone.status, "restored");
+    assert.equal(decode(await vscode.workspace.fs.readFile(originalUri)), "current work\n");
+
+    const document = await vscode.workspace.openTextDocument(originalUri);
+    await vscode.window.showTextDocument(document);
+    const dirtyEdit = new vscode.WorkspaceEdit();
+    dirtyEdit.replace(document.uri, fullDocumentRange(document), "unsaved work\n");
+    assert.equal(await vscode.workspace.applyEdit(dirtyEdit), true);
+    assert.equal(document.isDirty, true);
+    const dirtyResult = await service.restore(oldRevision);
+    assert.equal(dirtyResult.status, "dirty");
+    assert.equal(decode(await vscode.workspace.fs.readFile(originalUri)), "current work\n");
+    assert.match(errors.at(-1) ?? "", /unsaved changes/iu);
+    await vscode.commands.executeCommand("workbench.action.files.revert");
+
+    await vscode.workspace.fs.rename(originalUri, renamedUri);
+    const recreated = await service.restore(oldRevision);
+    assert.equal(recreated.status, "restored");
+    assert.equal(decode(await vscode.workspace.fs.readFile(originalUri)), "historical\n");
+    assert.equal(decode(await vscode.workspace.fs.readFile(renamedUri)), "current work\n");
+    assert.match(confirmations.at(-1)?.detail ?? "", /missing.*recreated.*No renamed destination/isu);
+    assert.equal(errors.length, 1);
+  } finally {
+    await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
+    await deleteIfPresent(originalUri);
+    await deleteIfPresent(renamedUri);
+    await rm(storeRoot, { recursive: true, force: true });
   }
 }
 
@@ -182,4 +265,21 @@ async function waitForDiffTab(modifiedScheme?: string): Promise<vscode.TabInputT
   });
   assert.ok(input);
   return input;
+}
+
+function decode(bytes: Uint8Array): string {
+  return new TextDecoder().decode(bytes);
+}
+
+function fullDocumentRange(document: vscode.TextDocument): vscode.Range {
+  const lastLine = document.lineAt(document.lineCount - 1);
+  return new vscode.Range(new vscode.Position(0, 0), lastLine.rangeIncludingLineBreak.end);
+}
+
+async function deleteIfPresent(uri: vscode.Uri): Promise<void> {
+  try {
+    await vscode.workspace.fs.delete(uri);
+  } catch {
+    // Cleanup is best-effort when a scenario already removed the file.
+  }
 }

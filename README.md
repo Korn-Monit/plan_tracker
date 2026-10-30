@@ -10,6 +10,8 @@ History lives in VS Code's workspace-scoped extension `storageUri`, outside the 
 
 Open the PromptTrace Activity Bar view to browse prompt-level Changes and unassigned revisions grouped by file. Select a revision to compare it with its predecessor, or use its inline action to compare it with the current workspace file. Stored snapshots open through a read-only virtual-document provider in VS Code's native side-by-side diff editor.
 
+Use **Restore Revision** from a revision's context menu to recover that content. PromptTrace shows the recorded path, revision time, and overwrite consequence before proceeding, captures the current on-disk content as a final safety snapshot, and offers a post-restore diff. It refuses to overwrite an editor with unsaved changes. A missing file (and missing parent folders) is recreated at its recorded historical path; PromptTrace never guesses that a differently named file is its renamed destination. Read or write permission failures leave the file unchanged where possible and retain any safety snapshot already captured.
+
 Claude Code `UserPromptSubmit` and `Stop` hook payloads are normalized behind a provider-neutral adapter. All revisions between those boundaries are shown as one Change with a net before/after diff per file. Prompt text is not stored by default; manual edits remain `unassigned`, interrupted sessions remain recoverable, and overlapping turns are labeled `ambiguous`.
 
 The settings are:
@@ -31,7 +33,7 @@ npm run test:vscode
 
 Press `F5` in VS Code or Cursor and choose **Run PromptTrace Extension** to launch an Extension Development Host. In that host, open the Command Palette and run **PromptTrace: Run Smoke Test**.
 
-`npm run test:vscode` uses VS Code's official Electron test harness to run capture, restart, timeline, and Claude attribution validation in isolated VS Code processes.
+`npm run test:vscode` uses VS Code's official Electron test harness to run capture, restart, timeline, Claude attribution, and safe-restore validation in isolated VS Code processes.
 
 Create an installable VSIX with:
 
@@ -74,3 +76,12 @@ Run the following in both VS Code and Cursor:
 - [ ] Make a manual edit after the turn and confirm it remains unassigned.
 - [ ] End a session without `Stop` and confirm the active Change is visibly interrupted; overlap two starts and confirm ambiguity is visible.
 - [ ] Inspect workspace storage and confirm full prompt text was not persisted.
+
+## Manual Phase 4 checklist
+
+- [ ] Restore an older revision and confirm the dialog names the file, revision time, and overwrite consequence.
+- [ ] Choose **Compare Restore** after success and inspect the safety-snapshot-to-restored-file diff.
+- [ ] Restore the safety revision and verify the pre-restore contents return exactly.
+- [ ] Try restore with unsaved editor changes and verify PromptTrace refuses without changing the file.
+- [ ] Rename or delete a tracked file, then restore its earlier revision and verify the historical path is recreated without changing the renamed file.
+- [ ] Try restoring to a location without write permission and verify the failure is actionable and the safety snapshot remains available.

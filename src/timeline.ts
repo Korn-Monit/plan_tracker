@@ -204,7 +204,7 @@ function resolveRevision(input: unknown, index: Readonly<HistoryIndex>): Revisio
   return undefined;
 }
 
-function snapshotUri(snapshotId: string | undefined, relativePath: string, label: string): vscode.Uri {
+export function snapshotUri(snapshotId: string | undefined, relativePath: string, label: string): vscode.Uri {
   const query = new URLSearchParams({ path: relativePath, label }).toString();
   return vscode.Uri.from({ scheme: SNAPSHOT_SCHEME, path: `/${snapshotId ?? "empty"}.md`, query });
 }

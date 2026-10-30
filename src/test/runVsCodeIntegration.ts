@@ -17,7 +17,7 @@ async function main(): Promise<void> {
   await writeFile(path.join(workspacePath, "baseline.md"), "baseline\n", "utf8");
   await writeFile(path.join(workspacePath, "node_modules", "excluded.md"), "must not be captured\n", "utf8");
 
-  for (const phase of ["capture", "restart", "timeline", "attribution"]) {
+  for (const phase of ["capture", "restart", "timeline", "attribution", "restore"]) {
     await runTests({
       extensionDevelopmentPath: projectRoot,
       extensionTestsPath,
