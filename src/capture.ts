@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 
 import { matchesAnyGlob } from "./glob";
 import { SnapshotStore } from "./history";
+import { normalizeRelativePath, storedWorkspacePath, workspaceStorageKey } from "./workspacePath";
 
 const DEFAULT_INCLUDES = ["**/*.md", "**/*.markdown"];
 const DEFAULT_EXCLUDES = [
@@ -194,20 +195,20 @@ export class RevisionCapture implements vscode.Disposable {
     if (folder === undefined) {
       return undefined;
     }
-    const relativePath = vscode.workspace.asRelativePath(uri, false).replaceAll("\\", "/");
+    const relativePath = normalizeRelativePath(pathWithinFolder(folder, uri));
     if (!matchesAnyGlob(relativePath, this.includes) || matchesAnyGlob(relativePath, this.excludes)) {
       return undefined;
     }
     return {
       folder,
       relativePath,
-      storagePath: `${folder.name}/${relativePath}`,
+      storagePath: storedWorkspacePath(folder, relativePath),
     };
   }
 
   private belongsToTrackedOpenWorkspace(storedPath: string): boolean {
     return (vscode.workspace.workspaceFolders ?? []).some((folder) => {
-      const prefix = `${folder.name}/`;
+      const prefix = `${workspaceStorageKey(folder)}/`;
       if (!storedPath.startsWith(prefix)) {
         return false;
       }
@@ -257,6 +258,11 @@ export class RevisionCapture implements vscode.Disposable {
     const message = error instanceof Error ? error.message : String(error);
     this.reportError(`PromptTrace could not record history: ${message}`);
   }
+}
+
+function pathWithinFolder(folder: vscode.WorkspaceFolder, uri: vscode.Uri): string {
+  const folderPath = folder.uri.path.endsWith("/") ? folder.uri.path : `${folder.uri.path}/`;
+  return uri.path.slice(folderPath.length);
 }
 
 function wait(milliseconds: number): Promise<void> {

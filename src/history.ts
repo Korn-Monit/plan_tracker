@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export const HISTORY_SCHEMA_VERSION = 2;
@@ -50,6 +50,20 @@ export interface HistoryIndex {
   changes: Change[];
 }
 
+export interface RetentionPolicy {
+  maxAgeDays: number;
+  maxStorageBytes: number;
+  now?: Date;
+}
+
+export interface RetentionResult {
+  removedRevisions: number;
+  removedChanges: number;
+  removedSnapshots: number;
+  storageBytes: number;
+  limitSatisfied: boolean;
+}
+
 const EMPTY_INDEX: HistoryIndex = {
   schemaVersion: HISTORY_SCHEMA_VERSION,
   revisions: [],
@@ -65,6 +79,7 @@ export class SnapshotStore {
   private index: HistoryIndex = structuredClone(EMPTY_INDEX);
   private writeQueue: Promise<void> = Promise.resolve();
   private readonly changeListeners = new Set<() => void>();
+  private recoveryNotice: string | undefined;
 
   public constructor(rootPath: string) {
     this.indexPath = path.join(rootPath, "history-v2.json");
@@ -84,6 +99,7 @@ export class SnapshotStore {
     const backup = await this.readIndex(this.backupPath);
     if (backup !== undefined) {
       this.index = backup;
+      this.recoveryNotice = "PromptTrace recovered history from its last complete backup because the primary index was unavailable or malformed.";
       await this.persist(false);
       return;
     }
@@ -91,6 +107,7 @@ export class SnapshotStore {
     const legacy = await this.readLegacyIndex(path.join(path.dirname(this.indexPath), "history-v1.json"));
     if (legacy !== undefined) {
       this.index = legacy;
+      this.recoveryNotice = "PromptTrace migrated workspace history from schema version 1 to version 2.";
       await this.persist(false);
       return;
     }
@@ -101,6 +118,82 @@ export class SnapshotStore {
 
   public getIndex(): Readonly<HistoryIndex> {
     return structuredClone(this.index);
+  }
+
+  public getRecoveryNotice(): string | undefined {
+    return this.recoveryNotice;
+  }
+
+  public applyRetention(policy: RetentionPolicy): Promise<RetentionResult> {
+    return this.enqueue(async () => {
+      const originalRevisionCount = this.index.revisions.length;
+      const originalChangeCount = this.index.changes.length;
+      const now = policy.now ?? new Date();
+      const cutoff = policy.maxAgeDays > 0
+        ? now.getTime() - policy.maxAgeDays * 24 * 60 * 60 * 1000
+        : Number.NEGATIVE_INFINITY;
+      const protectedRevisionIds = new Set<string>();
+      for (const relativePath of Object.keys(this.index.heads)) {
+        const latest = [...this.index.revisions].reverse().find((revision) => revision.relativePath === relativePath);
+        if (latest !== undefined) {
+          protectedRevisionIds.add(latest.id);
+        }
+      }
+
+      if (policy.maxAgeDays > 0) {
+        this.index.revisions = this.index.revisions.filter((revision) => protectedRevisionIds.has(revision.id)
+          || timestamp(revision.recordedAt) >= cutoff);
+        this.index.changes = this.index.changes.filter((change) => change.status === "active"
+          || timestamp(change.endedAt ?? change.startedAt) >= cutoff);
+      }
+      this.normalizeRetainedHistory();
+
+      let snapshotState = await this.snapshotState();
+      while (policy.maxStorageBytes > 0 && snapshotState.bytes > policy.maxStorageBytes) {
+        const removableRevision = this.index.revisions.find((revision) => !protectedRevisionIds.has(revision.id));
+        const removableChange = this.index.changes.find((change) => change.status !== "active");
+        if (removableRevision === undefined && removableChange === undefined) {
+          break;
+        }
+        const revisionTime = removableRevision === undefined ? Number.POSITIVE_INFINITY : timestamp(removableRevision.recordedAt);
+        const changeTime = removableChange === undefined
+          ? Number.POSITIVE_INFINITY
+          : timestamp(removableChange.endedAt ?? removableChange.startedAt);
+        if (revisionTime <= changeTime && removableRevision !== undefined) {
+          this.index.revisions = this.index.revisions.filter((revision) => revision.id !== removableRevision.id);
+        } else if (removableChange !== undefined) {
+          this.index.changes = this.index.changes.filter((change) => change.id !== removableChange.id);
+        }
+        this.normalizeRetainedHistory();
+        snapshotState = await this.snapshotState();
+      }
+
+      await this.persist();
+      const removedSnapshots = await this.removeUnreferencedSnapshots(snapshotState.files);
+      const finalState = await this.snapshotState();
+      this.notifyChanged();
+      return {
+        removedRevisions: originalRevisionCount - this.index.revisions.length,
+        removedChanges: originalChangeCount - this.index.changes.length,
+        removedSnapshots,
+        storageBytes: finalState.bytes,
+        limitSatisfied: policy.maxStorageBytes <= 0 || finalState.bytes <= policy.maxStorageBytes,
+      };
+    });
+  }
+
+  public clear(): Promise<void> {
+    return this.enqueue(async () => {
+      await rm(this.snapshotsPath, { recursive: true, force: true });
+      await rm(this.indexPath, { force: true });
+      await rm(this.backupPath, { force: true });
+      await rm(this.temporaryPath, { force: true });
+      await mkdir(this.snapshotsPath, { recursive: true });
+      this.index = structuredClone(EMPTY_INDEX);
+      this.recoveryNotice = undefined;
+      await this.persist(false);
+      this.notifyChanged();
+    });
   }
 
   public onDidChange(listener: () => void): { dispose(): void } {
@@ -169,6 +262,8 @@ export class SnapshotStore {
       const snapshotId = hashContent(content);
       const current = this.index.heads[relativePath];
       if (current?.deleted === false && current.snapshotId === snapshotId) {
+        // Recreate a missing content-addressed file without manufacturing a revision.
+        await this.writeSnapshot(snapshotId, content);
         return undefined;
       }
 
@@ -378,9 +473,84 @@ export class SnapshotStore {
     }
   }
 
+  private normalizeRetainedHistory(): void {
+    const changeIds = new Set(this.index.changes.map((change) => change.id));
+    const retainedContent = new Set<string>();
+    for (const revision of this.index.revisions) {
+      if (revision.snapshotId !== undefined) retainedContent.add(revision.snapshotId);
+    }
+    for (const head of Object.values(this.index.heads)) {
+      if (head.snapshotId !== undefined) retainedContent.add(head.snapshotId);
+    }
+    for (const change of this.index.changes) {
+      for (const file of change.files) {
+        if (file.beforeSnapshotId !== undefined) retainedContent.add(file.beforeSnapshotId);
+        if (file.afterSnapshotId !== undefined) retainedContent.add(file.afterSnapshotId);
+      }
+    }
+    this.index.revisions = this.index.revisions.map((revision) => {
+      const normalized = { ...revision };
+      if (normalized.previousSnapshotId !== undefined && !retainedContent.has(normalized.previousSnapshotId)) {
+        delete normalized.previousSnapshotId;
+      }
+      if (normalized.changeId !== undefined && !changeIds.has(normalized.changeId)) {
+        delete normalized.changeId;
+      }
+      return normalized;
+    });
+  }
+
+  private referencedSnapshotIds(): Set<string> {
+    const referenced = new Set<string>();
+    const add = (value: string | undefined): void => {
+      if (value !== undefined) referenced.add(value);
+    };
+    for (const revision of this.index.revisions) {
+      add(revision.snapshotId);
+      add(revision.previousSnapshotId);
+    }
+    for (const head of Object.values(this.index.heads)) add(head.snapshotId);
+    for (const change of this.index.changes) {
+      for (const file of change.files) {
+        add(file.beforeSnapshotId);
+        add(file.afterSnapshotId);
+      }
+      for (const head of Object.values(change.baselineHeads ?? {})) add(head.snapshotId);
+    }
+    return referenced;
+  }
+
+  private async snapshotState(): Promise<{ files: Map<string, number>; bytes: number }> {
+    const files = new Map<string, number>();
+    const referenced = this.referencedSnapshotIds();
+    for (const entry of await readdir(this.snapshotsPath, { withFileTypes: true })) {
+      const match = /^([a-f\d]{64})\.md$/u.exec(entry.name);
+      if (!entry.isFile() || match?.[1] === undefined || !referenced.has(match[1])) continue;
+      files.set(match[1], (await stat(path.join(this.snapshotsPath, entry.name))).size);
+    }
+    return { files, bytes: [...files.values()].reduce((sum, size) => sum + size, 0) };
+  }
+
+  private async removeUnreferencedSnapshots(retainedFiles: Map<string, number>): Promise<number> {
+    let removed = 0;
+    for (const entry of await readdir(this.snapshotsPath, { withFileTypes: true })) {
+      const match = /^([a-f\d]{64})\.md$/u.exec(entry.name);
+      if (entry.isFile() && match?.[1] !== undefined && !retainedFiles.has(match[1])) {
+        await rm(path.join(this.snapshotsPath, entry.name), { force: true });
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
   private snapshotFile(snapshotId: string): string {
     return path.join(this.snapshotsPath, `${snapshotId}.md`);
   }
+}
+
+function timestamp(value: string): number {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
 }
 
 export function hashContent(content: string): string {

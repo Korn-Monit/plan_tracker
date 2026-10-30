@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 
 import { Change, FileChange, HistoryIndex, Revision, SnapshotStore } from "./history";
+import { resolveStoredWorkspacePath } from "./workspacePath";
 
 export const SNAPSHOT_SCHEME = "prompttrace-snapshot";
 export const COMPARE_PREVIOUS_COMMAND = "promptTrace.compareWithPrevious";
@@ -164,7 +165,7 @@ export function registerTimeline(context: vscode.ExtensionContext, store: Snapsh
         await vscode.window.showErrorMessage("PromptTrace could not find that revision. Refresh the History view and try again.");
         return;
       }
-      const current = currentFileUri(revision.relativePath);
+      const current = resolveStoredWorkspacePath(revision.relativePath);
       if (current === undefined) {
         await vscode.window.showErrorMessage(`PromptTrace cannot compare ${displayPath(revision.relativePath)} because its workspace folder is not open.`);
         return;
@@ -216,17 +217,6 @@ function snapshotIdFromUri(uri: vscode.Uri): string | undefined {
   }
   const snapshotId = name.endsWith(".md") ? name.slice(0, -3) : name;
   return /^[a-f\d]{64}$/u.test(snapshotId) ? snapshotId : undefined;
-}
-
-function currentFileUri(storedPath: string): vscode.Uri | undefined {
-  const separator = storedPath.indexOf("/");
-  if (separator < 0) {
-    return undefined;
-  }
-  const folderName = storedPath.slice(0, separator);
-  const relativePath = storedPath.slice(separator + 1);
-  const folder = vscode.workspace.workspaceFolders?.find((candidate) => candidate.name === folderName);
-  return folder === undefined ? undefined : vscode.Uri.joinPath(folder.uri, ...relativePath.split("/"));
 }
 
 function pathsWithUnassignedRevisions(index: Readonly<HistoryIndex>): string[] {

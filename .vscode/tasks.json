@@ -10,6 +10,13 @@
         "reveal": "never"
       },
       "group": "build"
+    },
+    {
+      "type": "npm",
+      "script": "test:vscode",
+      "problemMatcher": [],
+      "group": "test",
+      "label": "npm: test:vscode"
     }
   ]
 }

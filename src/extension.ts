@@ -8,6 +8,7 @@ import { RESTORE_COMMAND, RestoreService } from "./restore";
 import { registerTimeline } from "./timeline";
 
 const SMOKE_TEST_COMMAND = "promptTrace.runSmokeTest";
+const DELETE_HISTORY_COMMAND = "promptTrace.deleteWorkspaceHistory";
 
 export interface PromptTraceApi {
   getHistoryIndex(): Readonly<HistoryIndex>;
@@ -39,6 +40,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
   try {
     const store = new SnapshotStore(context.storageUri.fsPath);
     await store.initialize();
+    if (store.getRecoveryNotice() !== undefined) {
+      await vscode.window.showWarningMessage(store.getRecoveryNotice()!);
+    }
+    await enforceRetention(store);
     registerTimeline(context, store);
     const restore = new RestoreService(store);
     const restoreCommand = vscode.commands.registerCommand(RESTORE_COMMAND, async (input: unknown) => {
@@ -53,6 +58,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
       void vscode.window.showErrorMessage(message);
     });
     await capture.start();
+    const deleteHistoryCommand = vscode.commands.registerCommand(DELETE_HISTORY_COMMAND, async () => {
+      const choice = await vscode.window.showWarningMessage(
+        "Delete all PromptTrace history for this workspace?",
+        {
+          modal: true,
+          detail: "This permanently deletes revisions, prompt attribution, safety snapshots, and backup indexes. Current matching files will be recorded again as fresh baselines.",
+        },
+        "Delete History",
+      );
+      if (choice !== "Delete History") return;
+      await store.clear();
+      await capture.synchronize();
+      await vscode.window.showInformationMessage("PromptTrace workspace history was deleted. Fresh baselines were created for current files.");
+    });
+    const retentionConfiguration = vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("promptTrace.maxAgeDays")
+        || event.affectsConfiguration("promptTrace.maxStorageMegabytes")) {
+        void enforceRetention(store);
+      }
+    });
     const adapter = new ClaudeCodeAdapter(false);
     const coordinator = new SessionCoordinator(store, () => capture.synchronize());
     const handleClaudeHook = async (payload: unknown): Promise<void> => {
@@ -66,7 +91,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
       "promptTrace.handleClaudeHook",
       handleClaudeHook,
     );
-    context.subscriptions.push(capture, claudeHookCommand, restoreCommand);
+    context.subscriptions.push(capture, claudeHookCommand, restoreCommand, deleteHistoryCommand, retentionConfiguration);
     return {
       getHistoryIndex: () => store.getIndex(),
       readSnapshot: (snapshotId) => store.readSnapshot(snapshotId),
@@ -76,6 +101,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
     const message = error instanceof Error ? error.message : String(error);
     await vscode.window.showErrorMessage(`PromptTrace could not start history capture: ${message}`);
     return undefined;
+  }
+}
+
+async function enforceRetention(store: SnapshotStore): Promise<void> {
+  const configuration = vscode.workspace.getConfiguration("promptTrace");
+  const maxAgeDays = configuration.get<number>("maxAgeDays", 90);
+  const maxStorageMegabytes = configuration.get<number>("maxStorageMegabytes", 500);
+  const result = await store.applyRetention({
+    maxAgeDays,
+    maxStorageBytes: maxStorageMegabytes <= 0 ? 0 : Math.floor(maxStorageMegabytes * 1024 * 1024),
+  });
+  if (!result.limitSatisfied) {
+    await vscode.window.showWarningMessage(
+      "PromptTrace could not meet the storage limit because current file snapshots alone exceed it. Current snapshots were preserved.",
+    );
   }
 }
 

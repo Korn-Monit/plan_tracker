@@ -18,6 +18,7 @@
     "onCommand:promptTrace.compareWithPrevious",
     "onCommand:promptTrace.compareWithCurrent",
     "onCommand:promptTrace.restoreRevision",
+    "onCommand:promptTrace.deleteWorkspaceHistory",
     "onCommand:promptTrace.handleClaudeHook"
   ],
   "main": "./dist/extension.js",
@@ -46,6 +47,10 @@
         "command": "promptTrace.restoreRevision",
         "title": "PromptTrace: Restore Revision",
         "icon": "$(discard)"
+      },
+      {
+        "command": "promptTrace.deleteWorkspaceHistory",
+        "title": "PromptTrace: Delete Workspace History"
       }
     ],
     "viewsContainers": {
@@ -132,6 +137,18 @@
           "minimum": 50,
           "maximum": 5000,
           "description": "Delay used to coalesce noisy filesystem notifications. Editor saves are captured immediately."
+        },
+        "promptTrace.maxAgeDays": {
+          "type": "number",
+          "default": 90,
+          "minimum": 0,
+          "description": "Maximum age of historical revisions in days. Current file heads are always retained. Set to 0 to disable age-based retention."
+        },
+        "promptTrace.maxStorageMegabytes": {
+          "type": "number",
+          "default": 500,
+          "minimum": 0,
+          "description": "Maximum storage used by referenced snapshots, in MiB. Old history is removed first; current file heads are always retained. Set to 0 to disable size-based retention."
         }
       }
     }

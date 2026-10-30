@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 
 import { Revision, SnapshotStore } from "./history";
 import { snapshotUri } from "./timeline";
+import { resolveStoredWorkspacePath } from "./workspacePath";
 
 export const RESTORE_COMMAND = "promptTrace.restoreRevision";
 
@@ -43,7 +44,7 @@ export class RestoreService {
       return { status: "unavailable" };
     }
 
-    const target = workspaceFileUri(revision.relativePath);
+    const target = resolveStoredWorkspacePath(revision.relativePath);
     if (target === undefined) {
       await this.ui.error(`PromptTrace cannot restore ${displayPath(revision.relativePath)} because its recorded workspace folder is not open.`);
       return { status: "unavailable" };
@@ -115,17 +116,6 @@ export class RestoreService {
     }
     return { status: "restored", target, safetySnapshotId };
   }
-}
-
-export function workspaceFileUri(storedPath: string): vscode.Uri | undefined {
-  const separator = storedPath.indexOf("/");
-  if (separator < 0) {
-    return undefined;
-  }
-  const folderName = storedPath.slice(0, separator);
-  const relativePath = storedPath.slice(separator + 1);
-  const folder = vscode.workspace.workspaceFolders?.find((candidate) => candidate.name === folderName);
-  return folder === undefined ? undefined : vscode.Uri.joinPath(folder.uri, ...relativePath.split("/"));
 }
 
 function dirtyDocument(uri: vscode.Uri): vscode.TextDocument | undefined {

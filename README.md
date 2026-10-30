@@ -2,11 +2,15 @@
 
 PromptTrace is a local-first VS Code/Cursor extension for reviewing file history and the changes made during each Claude Code prompt. It captures durable Markdown revisions independently of attribution and exposes them in a native VS Code history and diff workflow.
 
+## Installation
+
+Install a packaged `prompttrace.vsix` with **Extensions: Install from VSIX...**, then reload the editor. For development, run `npm install`, press `F5`, and choose **Run PromptTrace Extension**.
+
 ## Markdown history
 
 When enabled, PromptTrace scans the open workspace and stores the initial contents of matching files as baselines. Later editor saves and filesystem create/change/delete/rename events produce ordered revisions. Content-identical events are ignored.
 
-History lives in VS Code's workspace-scoped extension `storageUri`, outside the project, as a schema-versioned JSON index plus immutable SHA-256-addressed snapshot files. PromptTrace recovers from a malformed or incomplete primary index using its last complete backup.
+History lives in the editor's workspace-scoped extension `storageUri`, outside the project, as a schema-versioned JSON index plus immutable SHA-256-addressed snapshot files. In VS Code this is under the user-data `workspaceStorage` directory for the workspace and extension. PromptTrace recovers from a malformed or incomplete primary index using its last complete backup and reports the recovery.
 
 Open the PromptTrace Activity Bar view to browse prompt-level Changes and unassigned revisions grouped by file. Select a revision to compare it with its predecessor, or use its inline action to compare it with the current workspace file. Stored snapshots open through a read-only virtual-document provider in VS Code's native side-by-side diff editor.
 
@@ -20,6 +24,33 @@ The settings are:
 - `promptTrace.include` (defaults to Markdown and `.markdown` files)
 - `promptTrace.exclude` (defaults to Git, dependency, vendor, build, and PromptTrace data folders)
 - `promptTrace.debounceMilliseconds` (filesystem-event coalescing; editor saves are captured immediately)
+- `promptTrace.maxAgeDays` (defaults to 90; `0` disables age retention)
+- `promptTrace.maxStorageMegabytes` (defaults to 500 MiB; `0` disables size retention)
+
+Retention runs at startup and when either retention setting changes. Old revisions and completed Changes are removed first; the latest state of every tracked path and active prompt baselines are always preserved. If current heads alone exceed the size limit, PromptTrace keeps them and shows a warning.
+
+## Privacy and deletion
+
+All snapshots and metadata remain local in the editor's workspace storage. Snapshot contents are not redacted: anything in a tracked file is stored verbatim. Prompt text is omitted by default, but provider/session identifiers, timestamps, paths, and attribution state are metadata. Exclude sensitive paths before editing them; changing exclusions does not erase existing history.
+
+Run **PromptTrace: Delete Workspace History** to permanently remove that workspace's snapshots, index, pending file, and backup index. The command requires confirmation, then records current matching files as fresh baselines. Deleting history cannot be undone by PromptTrace.
+
+## Limitations
+
+- Markdown and `.markdown` files are the default scope; binary history is unsupported.
+- Attribution depends on valid Claude Code lifecycle hooks and is marked ambiguous when turns overlap.
+- Rename destinations are not inferred during restore.
+- Retention cannot force current heads below the configured size cap.
+- History is local per editor workspace and is not synchronized.
+- Cursor uses the VS Code extension API, but each release must still be smoke-tested separately in Cursor.
+
+## Troubleshooting
+
+- If no history appears, confirm the workspace is trusted/open, `promptTrace.enabled` is true, and include/exclude patterns match the file.
+- If comparison reports an unavailable snapshot, the snapshot file is missing or unreadable. Saving an unchanged current file repairs its current content-addressed snapshot; older unavailable content cannot be reconstructed.
+- If startup reports backup recovery, inspect free disk space and permissions before continuing. The repaired primary index is written automatically.
+- Restore refuses dirty editors. Save or revert the file and retry.
+- Use **Developer: Show Logs...** and choose the Extension Host log for activation or filesystem errors.
 
 ## Development
 
@@ -85,3 +116,11 @@ Run the following in both VS Code and Cursor:
 - [ ] Try restore with unsaved editor changes and verify PromptTrace refuses without changing the file.
 - [ ] Rename or delete a tracked file, then restore its earlier revision and verify the historical path is recreated without changing the renamed file.
 - [ ] Try restoring to a location without write permission and verify the failure is actionable and the safety snapshot remains available.
+
+## Manual Phase 5 checklist (VS Code)
+
+- [ ] Change both retention settings and confirm old history is pruned while current file heads remain comparable/restorable.
+- [ ] Run **PromptTrace: Delete Workspace History**, cancel once, then confirm once; verify old snapshots and attribution disappear and current files become fresh baselines.
+- [ ] Open a multi-root workspace, including roots with the same display name, and verify their histories remain distinct.
+- [ ] Corrupt a disposable test index and verify backup recovery is reported without an activation failure.
+- [ ] Install the packaged VSIX in current VS Code and rerun capture, compare, restore, retention, and deletion scenarios.
