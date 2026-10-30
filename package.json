@@ -1,111 +1,128 @@
 {
-  "name": "prompttrace",
-  "displayName": "PromptTrace",
-  "description": "Local-first prompt-aware file history for VS Code and Cursor.",
-  "version": "0.0.1",
-  "publisher": "prompttrace-local",
-  "license": "UNLICENSED",
+  "name": "plan-tracker",
+  "displayName": "Plan Tracker",
+  "description": "Local-first Markdown history for reviewing changes made by people and coding agents.",
+  "version": "0.1.0",
+  "publisher": "MonitKorn",
+  "preview": true,
+  "license": "MIT",
+  "icon": "resources/plan-tracker.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Korn-Monit/plan_tracker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Korn-Monit/plan_tracker/issues"
+  },
+  "homepage": "https://github.com/Korn-Monit/plan_tracker#readme",
   "engines": {
     "vscode": "^1.95.0"
   },
   "categories": [
     "Other"
   ],
+  "keywords": [
+    "history",
+    "markdown",
+    "diff",
+    "ai",
+    "agent"
+  ],
   "activationEvents": [
     "onStartupFinished",
-    "onCommand:promptTrace.runSmokeTest",
-    "onView:promptTrace.history",
-    "onCommand:promptTrace.compareWithPrevious",
-    "onCommand:promptTrace.compareWithCurrent",
-    "onCommand:promptTrace.restoreRevision",
-    "onCommand:promptTrace.deleteWorkspaceHistory",
-    "onCommand:promptTrace.handleClaudeHook"
+    "onCommand:planTracker.runSmokeTest",
+    "onView:planTracker.history",
+    "onCommand:planTracker.compareWithPrevious",
+    "onCommand:planTracker.compareWithCurrent",
+    "onCommand:planTracker.restoreRevision",
+    "onCommand:planTracker.deleteWorkspaceHistory",
+    "onCommand:planTracker.handleClaudeHook"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "promptTrace.runSmokeTest",
-        "title": "PromptTrace: Run Smoke Test"
+        "command": "planTracker.runSmokeTest",
+        "title": "Plan Tracker: Run Smoke Test"
       },
       {
-        "command": "promptTrace.compareWithPrevious",
-        "title": "PromptTrace: Compare with Previous Revision",
+        "command": "planTracker.compareWithPrevious",
+        "title": "Plan Tracker: Compare with Previous Revision",
         "icon": "$(compare-changes)"
       },
       {
-        "command": "promptTrace.compareWithCurrent",
-        "title": "PromptTrace: Compare with Current File",
+        "command": "planTracker.compareWithCurrent",
+        "title": "Plan Tracker: Compare with Current File",
         "icon": "$(diff)"
       },
       {
-        "command": "promptTrace.handleClaudeHook",
-        "title": "PromptTrace: Receive Claude Code Hook",
+        "command": "planTracker.handleClaudeHook",
+        "title": "Plan Tracker: Receive Claude Code Hook",
         "enablement": "false"
       },
       {
-        "command": "promptTrace.restoreRevision",
-        "title": "PromptTrace: Restore Revision",
+        "command": "planTracker.restoreRevision",
+        "title": "Plan Tracker: Restore Revision",
         "icon": "$(discard)"
       },
       {
-        "command": "promptTrace.deleteWorkspaceHistory",
-        "title": "PromptTrace: Delete Workspace History"
+        "command": "planTracker.deleteWorkspaceHistory",
+        "title": "Plan Tracker: Delete Workspace History"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "promptTrace",
-          "title": "PromptTrace",
-          "icon": "resources/prompttrace.svg"
+          "id": "planTracker",
+          "title": "Plan Tracker",
+          "icon": "resources/plan-tracker.svg"
         }
       ]
     },
     "views": {
-      "promptTrace": [
+      "planTracker": [
         {
-          "id": "promptTrace.history",
+          "id": "planTracker.history",
           "name": "History",
-          "icon": "resources/prompttrace.svg",
-          "contextualTitle": "PromptTrace History"
+          "icon": "resources/plan-tracker.svg",
+          "contextualTitle": "Plan Tracker History"
         }
       ]
     },
     "viewsWelcome": [
       {
-        "view": "promptTrace.history",
+        "view": "planTracker.history",
         "contents": "No Markdown history has been recorded yet.\n\nSave a Markdown file in this workspace to create a revision."
       }
     ],
     "menus": {
       "view/item/context": [
         {
-          "command": "promptTrace.compareWithPrevious",
-          "when": "view == promptTrace.history && viewItem == promptTraceRevision",
+          "command": "planTracker.compareWithPrevious",
+          "when": "view == planTracker.history && viewItem == planTrackerRevision",
           "group": "inline@1"
         },
         {
-          "command": "promptTrace.compareWithCurrent",
-          "when": "view == promptTrace.history && viewItem == promptTraceRevision",
+          "command": "planTracker.compareWithCurrent",
+          "when": "view == planTracker.history && viewItem == planTrackerRevision",
           "group": "inline@2"
         },
         {
-          "command": "promptTrace.restoreRevision",
-          "when": "view == promptTrace.history && viewItem == promptTraceRevision",
+          "command": "planTracker.restoreRevision",
+          "when": "view == planTracker.history && viewItem == planTrackerRevision",
           "group": "navigation@3"
         }
       ]
     },
     "configuration": {
-      "title": "PromptTrace",
+      "title": "Plan Tracker",
       "properties": {
-        "promptTrace.enabled": {
+        "planTracker.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable PromptTrace for this editor window."
+          "description": "Enable Plan Tracker for this editor window."
         },
-        "promptTrace.include": {
+        "planTracker.include": {
           "type": "array",
           "items": {
             "type": "string"
@@ -116,7 +133,7 @@
           ],
           "description": "Workspace-relative glob patterns for files whose history is captured."
         },
-        "promptTrace.exclude": {
+        "planTracker.exclude": {
           "type": "array",
           "items": {
             "type": "string"
@@ -127,24 +144,25 @@
             "**/vendor/**",
             "**/dist/**",
             "**/build/**",
-            "**/.prompttrace/**"
+            "**/.plan-tracker/**",
+            "**/.vscode-test/**"
           ],
           "description": "Workspace-relative glob patterns excluded from history capture."
         },
-        "promptTrace.debounceMilliseconds": {
+        "planTracker.debounceMilliseconds": {
           "type": "number",
           "default": 250,
           "minimum": 50,
           "maximum": 5000,
           "description": "Delay used to coalesce noisy filesystem notifications. Editor saves are captured immediately."
         },
-        "promptTrace.maxAgeDays": {
+        "planTracker.maxAgeDays": {
           "type": "number",
           "default": 90,
           "minimum": 0,
           "description": "Maximum age of historical revisions in days. Current file heads are always retained. Set to 0 to disable age-based retention."
         },
-        "promptTrace.maxStorageMegabytes": {
+        "planTracker.maxStorageMegabytes": {
           "type": "number",
           "default": 500,
           "minimum": 0,
@@ -162,7 +180,7 @@
     "test": "npm run compile && node --test --test-isolation=none dist/test/*.test.js",
     "test:vscode": "npm run compile && node dist/test/runVsCodeIntegration.js",
     "check": "npm run lint && npm run typecheck && npm test",
-    "package": "npm run check && vsce package --allow-missing-repository --out prompttrace.vsix"
+    "package": "npm run check && vsce package --allow-missing-repository --out plan-tracker.vsix"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

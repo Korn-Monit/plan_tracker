@@ -11,7 +11,8 @@ const DEFAULT_EXCLUDES = [
   "**/vendor/**",
   "**/dist/**",
   "**/build/**",
-  "**/.prompttrace/**",
+  "**/.plan-tracker/**",
+  "**/.vscode-test/**",
 ];
 
 interface ScopedPath {
@@ -64,7 +65,7 @@ export class RevisionCapture implements vscode.Disposable {
         }
       }),
       vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration("promptTrace")) {
+        if (event.affectsConfiguration("planTracker")) {
           this.reloadConfiguration();
         }
       }),
@@ -92,7 +93,7 @@ export class RevisionCapture implements vscode.Disposable {
   }
 
   private reloadConfiguration(): void {
-    const configuration = vscode.workspace.getConfiguration("promptTrace");
+    const configuration = vscode.workspace.getConfiguration("planTracker");
     this.includes = configuration.get<string[]>("include", DEFAULT_INCLUDES);
     this.excludes = configuration.get<string[]>("exclude", DEFAULT_EXCLUDES);
   }
@@ -220,7 +221,7 @@ export class RevisionCapture implements vscode.Disposable {
 
   private replaceTimer(key: string, operation: () => Promise<void>): void {
     this.cancelTimer(key);
-    const configuration = vscode.workspace.getConfiguration("promptTrace");
+    const configuration = vscode.workspace.getConfiguration("planTracker");
     const delay = configuration.get<number>("debounceMilliseconds", 250);
     const timer = setTimeout(() => {
       this.timers.delete(key);
@@ -256,7 +257,7 @@ export class RevisionCapture implements vscode.Disposable {
 
   private report(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
-    this.reportError(`PromptTrace could not record history: ${message}`);
+    this.reportError(`Plan Tracker could not record history: ${message}`);
   }
 }
 

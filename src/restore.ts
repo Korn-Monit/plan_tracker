@@ -4,7 +4,7 @@ import { Revision, SnapshotStore } from "./history";
 import { snapshotUri } from "./timeline";
 import { resolveStoredWorkspacePath } from "./workspacePath";
 
-export const RESTORE_COMMAND = "promptTrace.restoreRevision";
+export const RESTORE_COMMAND = "planTracker.restoreRevision";
 
 export type RestoreResult =
   | { status: "restored"; target: vscode.Uri; safetySnapshotId?: string }
@@ -40,18 +40,18 @@ export class RestoreService {
 
   public async restore(revision: Revision): Promise<RestoreResult> {
     if (revision.snapshotId === undefined) {
-      await this.ui.error("PromptTrace cannot restore this revision because it represents a deleted file and has no file content.");
+      await this.ui.error("Plan Tracker cannot restore this revision because it represents a deleted file and has no file content.");
       return { status: "unavailable" };
     }
 
     const target = resolveStoredWorkspacePath(revision.relativePath);
     if (target === undefined) {
-      await this.ui.error(`PromptTrace cannot restore ${displayPath(revision.relativePath)} because its recorded workspace folder is not open.`);
+      await this.ui.error(`Plan Tracker cannot restore ${displayPath(revision.relativePath)} because its recorded workspace folder is not open.`);
       return { status: "unavailable" };
     }
 
     if (dirtyDocument(target) !== undefined) {
-      await this.ui.error(`PromptTrace did not restore ${displayPath(revision.relativePath)} because it has unsaved changes. Save or revert the editor, then try again.`);
+      await this.ui.error(`Plan Tracker did not restore ${displayPath(revision.relativePath)} because it has unsaved changes. Save or revert the editor, then try again.`);
       return { status: "dirty" };
     }
 
@@ -60,12 +60,12 @@ export class RestoreService {
       exists = await fileExists(target);
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : String(error);
-      await this.ui.error(`PromptTrace could not inspect ${displayPath(revision.relativePath)} before restore: ${reason} No file was changed.`);
+      await this.ui.error(`Plan Tracker could not inspect ${displayPath(revision.relativePath)} before restore: ${reason} No file was changed.`);
       return { status: "failed" };
     }
     const revisionTime = new Date(revision.recordedAt).toLocaleString();
     const consequence = exists
-      ? "The file on disk will be replaced. PromptTrace will first preserve its current contents as a safety snapshot."
+      ? "The file on disk will be replaced. Plan Tracker will first preserve its current contents as a safety snapshot."
       : "The file is currently missing and will be recreated at its recorded path. No renamed destination will be changed.";
     const confirmed = await this.ui.confirm(
       `Restore ${displayPath(revision.relativePath)} from ${revisionTime}?`,
@@ -77,7 +77,7 @@ export class RestoreService {
 
     // The user may have edited the document while the modal confirmation was open.
     if (dirtyDocument(target) !== undefined) {
-      await this.ui.error(`PromptTrace did not restore ${displayPath(revision.relativePath)} because it acquired unsaved changes while restore was being confirmed.`);
+      await this.ui.error(`Plan Tracker did not restore ${displayPath(revision.relativePath)} because it acquired unsaved changes while restore was being confirmed.`);
       return { status: "dirty" };
     }
 
@@ -100,18 +100,18 @@ export class RestoreService {
       const reason = error instanceof Error ? error.message : String(error);
       const safety = safetySnapshotId === undefined
         ? "No existing file content was overwritten."
-        : "The pre-restore safety snapshot remains in PromptTrace history.";
-      await this.ui.error(`PromptTrace could not restore ${displayPath(revision.relativePath)}: ${reason} ${safety}`);
+        : "The pre-restore safety snapshot remains in Plan Tracker history.";
+      await this.ui.error(`Plan Tracker could not restore ${displayPath(revision.relativePath)}: ${reason} ${safety}`);
       return { status: "failed" };
     }
 
-    const compare = await this.ui.success(`Restored ${displayPath(revision.relativePath)}. The previous contents remain available in PromptTrace history.`);
+    const compare = await this.ui.success(`Restored ${displayPath(revision.relativePath)}. The previous contents remain available in Plan Tracker history.`);
     if (compare) {
       await vscode.commands.executeCommand(
         "vscode.diff",
         snapshotUri(safetySnapshotId, revision.relativePath, "before-restore"),
         target,
-        `${displayPath(revision.relativePath)} (before restore ↔ restored)`,
+        `${displayPath(revision.relativePath)} (before restore â†” restored)`,
       );
     }
     return { status: "restored", target, safetySnapshotId };

@@ -7,21 +7,21 @@ import { getSmokeTestMessage } from "./smoke";
 import { RESTORE_COMMAND, RestoreService } from "./restore";
 import { registerTimeline } from "./timeline";
 
-const SMOKE_TEST_COMMAND = "promptTrace.runSmokeTest";
-const DELETE_HISTORY_COMMAND = "promptTrace.deleteWorkspaceHistory";
+const SMOKE_TEST_COMMAND = "planTracker.runSmokeTest";
+const DELETE_HISTORY_COMMAND = "planTracker.deleteWorkspaceHistory";
 
-export interface PromptTraceApi {
+export interface PlanTrackerApi {
   getHistoryIndex(): Readonly<HistoryIndex>;
   readSnapshot(snapshotId: string): Promise<string>;
   handleClaudeHook(payload: unknown): Promise<void>;
 }
 
-export async function activate(context: vscode.ExtensionContext): Promise<PromptTraceApi | undefined> {
+export async function activate(context: vscode.ExtensionContext): Promise<PlanTrackerApi | undefined> {
   const smokeTestCommand = vscode.commands.registerCommand(
     SMOKE_TEST_COMMAND,
     async (): Promise<void> => {
       const isEnabled = vscode.workspace
-        .getConfiguration("promptTrace")
+        .getConfiguration("planTracker")
         .get<boolean>("enabled", true);
 
       await vscode.window.showInformationMessage(getSmokeTestMessage(isEnabled));
@@ -31,7 +31,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
   context.subscriptions.push(smokeTestCommand);
 
   const isEnabled = vscode.workspace
-    .getConfiguration("promptTrace")
+    .getConfiguration("planTracker")
     .get<boolean>("enabled", true);
   if (!isEnabled || context.storageUri === undefined || vscode.workspace.workspaceFolders === undefined) {
     return undefined;
@@ -49,7 +49,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
     const restoreCommand = vscode.commands.registerCommand(RESTORE_COMMAND, async (input: unknown) => {
       const revision = resolveRevision(input, store.getIndex());
       if (revision === undefined) {
-        await vscode.window.showErrorMessage("PromptTrace could not find that revision. Refresh the History view and try again.");
+        await vscode.window.showErrorMessage("Plan Tracker could not find that revision. Refresh the History view and try again.");
         return;
       }
       await restore.restore(revision);
@@ -60,7 +60,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
     await capture.start();
     const deleteHistoryCommand = vscode.commands.registerCommand(DELETE_HISTORY_COMMAND, async () => {
       const choice = await vscode.window.showWarningMessage(
-        "Delete all PromptTrace history for this workspace?",
+        "Delete all Plan Tracker history for this workspace?",
         {
           modal: true,
           detail: "This permanently deletes revisions, prompt attribution, safety snapshots, and backup indexes. Current matching files will be recorded again as fresh baselines.",
@@ -70,11 +70,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
       if (choice !== "Delete History") return;
       await store.clear();
       await capture.synchronize();
-      await vscode.window.showInformationMessage("PromptTrace workspace history was deleted. Fresh baselines were created for current files.");
+      await vscode.window.showInformationMessage("Plan Tracker workspace history was deleted. Fresh baselines were created for current files.");
     });
     const retentionConfiguration = vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration("promptTrace.maxAgeDays")
-        || event.affectsConfiguration("promptTrace.maxStorageMegabytes")) {
+      if (event.affectsConfiguration("planTracker.maxAgeDays")
+        || event.affectsConfiguration("planTracker.maxStorageMegabytes")) {
         void enforceRetention(store);
       }
     });
@@ -83,12 +83,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
     const handleClaudeHook = async (payload: unknown): Promise<void> => {
       const event = adapter.adapt(payload);
       if (event === undefined) {
-        throw new Error("PromptTrace received an invalid or unsupported Claude Code hook payload.");
+        throw new Error("Plan Tracker received an invalid or unsupported Claude Code hook payload.");
       }
       await coordinator.accept(event);
     };
     const claudeHookCommand = vscode.commands.registerCommand(
-      "promptTrace.handleClaudeHook",
+      "planTracker.handleClaudeHook",
       handleClaudeHook,
     );
     context.subscriptions.push(capture, claudeHookCommand, restoreCommand, deleteHistoryCommand, retentionConfiguration);
@@ -99,13 +99,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Prompt
     };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    await vscode.window.showErrorMessage(`PromptTrace could not start history capture: ${message}`);
+    await vscode.window.showErrorMessage(`Plan Tracker could not start history capture: ${message}`);
     return undefined;
   }
 }
 
 async function enforceRetention(store: SnapshotStore): Promise<void> {
-  const configuration = vscode.workspace.getConfiguration("promptTrace");
+  const configuration = vscode.workspace.getConfiguration("planTracker");
   const maxAgeDays = configuration.get<number>("maxAgeDays", 90);
   const maxStorageMegabytes = configuration.get<number>("maxStorageMegabytes", 500);
   const result = await store.applyRetention({
@@ -114,7 +114,7 @@ async function enforceRetention(store: SnapshotStore): Promise<void> {
   });
   if (!result.limitSatisfied) {
     await vscode.window.showWarningMessage(
-      "PromptTrace could not meet the storage limit because current file snapshots alone exceed it. Current snapshots were preserved.",
+      "Plan Tracker could not meet the storage limit because current file snapshots alone exceed it. Current snapshots were preserved.",
     );
   }
 }

@@ -24,7 +24,7 @@ async function main(): Promise<void> {
     await runTests({
       extensionDevelopmentPath: extensionPath,
       extensionTestsPath,
-      extensionTestsEnv: { PROMPTTRACE_TEST_PHASE: phase },
+      extensionTestsEnv: { PLAN_TRACKER_TEST_PHASE: phase },
       launchArgs: [workspacePath, "--disable-workspace-trust", `--user-data-dir=${userDataPath}`],
     });
   }

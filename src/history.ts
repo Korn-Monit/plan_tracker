@@ -99,7 +99,7 @@ export class SnapshotStore {
     const backup = await this.readIndex(this.backupPath);
     if (backup !== undefined) {
       this.index = backup;
-      this.recoveryNotice = "PromptTrace recovered history from its last complete backup because the primary index was unavailable or malformed.";
+      this.recoveryNotice = "Plan Tracker recovered history from its last complete backup because the primary index was unavailable or malformed.";
       await this.persist(false);
       return;
     }
@@ -107,7 +107,7 @@ export class SnapshotStore {
     const legacy = await this.readLegacyIndex(path.join(path.dirname(this.indexPath), "history-v1.json"));
     if (legacy !== undefined) {
       this.index = legacy;
-      this.recoveryNotice = "PromptTrace migrated workspace history from schema version 1 to version 2.";
+      this.recoveryNotice = "Plan Tracker migrated workspace history from schema version 1 to version 2.";
       await this.persist(false);
       return;
     }

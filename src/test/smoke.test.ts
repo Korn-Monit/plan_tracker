@@ -7,9 +7,9 @@ void test("smoke command reports an active extension when enabled", () => {
   assert.equal(getSmokeTestMessage(true), SMOKE_TEST_MESSAGE);
 });
 
-void test("smoke command explains when PromptTrace is disabled", () => {
+void test("smoke command explains when Plan Tracker is disabled", () => {
   assert.equal(
     getSmokeTestMessage(false),
-    "PromptTrace is disabled in settings.",
+    "Plan Tracker is disabled in settings.",
   );
 });

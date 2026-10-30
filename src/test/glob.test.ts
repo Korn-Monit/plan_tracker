@@ -11,9 +11,9 @@ void test("Markdown include globs match root and nested files", () => {
 });
 
 void test("exclusion globs match complete directory segments", () => {
-  const globs = ["**/node_modules/**", "**/.prompttrace/**"];
+  const globs = ["**/node_modules/**", "**/.plan-tracker/**"];
   assert.equal(matchesAnyGlob("node_modules/pkg/README.md", globs), true);
   assert.equal(matchesAnyGlob("app/node_modules/pkg/README.md", globs), true);
   assert.equal(matchesAnyGlob("docs/node_modules-notes.md", globs), false);
-  assert.equal(matchesAnyGlob(".prompttrace/index.md", globs), true);
+  assert.equal(matchesAnyGlob(".plan-tracker/index.md", globs), true);
 });

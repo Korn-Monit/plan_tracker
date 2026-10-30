@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run PromptTrace Extension",
+      "name": "Run Plan Tracker Extension",
       "type": "extensionHost",
       "request": "launch",
       "args": [

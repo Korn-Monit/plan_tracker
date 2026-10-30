@@ -1,56 +1,105 @@
-# PromptTrace
+# Plan Tracker
 
-PromptTrace is a local-first VS Code/Cursor extension for reviewing file history and the changes made during each Claude Code prompt. It captures durable Markdown revisions independently of attribution and exposes them in a native VS Code history and diff workflow.
+Plan Tracker is a local-first VS Code extension that keeps a recoverable history of Markdown files and lets you inspect changes with VS Code's native diff editor. It is designed to remain useful whether a change came from a person, an AI coding agent, or another tool.
+
+> **Early version:** Plan Tracker is still under active development. Features, storage formats, commands, and configuration may change. Test restore workflows on non-critical files before relying on it as your only recovery mechanism.
+
+Plan Tracker is currently focused on making local Markdown history simple, visible, and safe to explore.
+
+## Features
+
+- Captures distinct saved states of `.md` and `.markdown` files.
+- Keeps history across editor restarts without creating Git commits.
+- Shows revisions in a Plan Tracker Activity Bar view.
+- Compares stored revisions with their predecessor or the current file.
+- Restores older content after creating a safety snapshot of the current file.
+- Deduplicates identical content and applies configurable retention limits.
+- Stores history locally in VS Code's workspace storage.
+- Can group changes by an agent turn when supported lifecycle events are supplied.
+
+Plan Tracker complements version control; it is not a replacement for Git, backups, or source-control review.
+
+## Example: review an agent's plan before execution
+
+Imagine you are working with a coding agent such as Claude Code or Codex. You ask it to create or revise `PROJECT_PLAN.md`, but before allowing implementation to begin, you want to understand exactly how the plan changed.
+
+With Plan Tracker you can:
+
+1. Save the current plan as a known baseline.
+2. Let the coding agent revise the Markdown file.
+3. Open Plan Tracker and select the newest revision.
+4. Review additions and removals in VS Code's diff editor.
+5. Accept the revised plan, continue editing it, or restore the earlier version before any code is executed.
+
+This workflow does not require agent attribution. Plan Tracker records saved Markdown changes made by Claude, Codex, another tool, or a person. When a supported lifecycle integration is available, related file revisions can additionally be grouped into one agent turn.
 
 ## Installation
 
-Install a packaged `prompttrace.vsix` with **Extensions: Install from VSIX...**, then reload the editor. For development, run `npm install`, press `F5`, and choose **Run PromptTrace Extension**.
+1. Open the Command Palette with `Ctrl+Shift+P` on Windows/Linux or `Cmd+Shift+P` on macOS.
+2. Run **Extensions: Install from VSIX...**.
+3. Select the packaged Plan Tracker `.vsix` file.
+4. Reload VS Code when prompted.
 
-## Markdown history
+## Getting started
 
-When enabled, PromptTrace scans the open workspace and stores the initial contents of matching files as baselines. Later editor saves and filesystem create/change/delete/rename events produce ordered revisions. Content-identical events are ignored.
+1. Open a folder or workspace in VS Code.
+2. Create or edit a Markdown file and save it.
+3. Open the **Plan Tracker** icon in the Activity Bar.
+4. Select a revision to compare it with its previous state.
+5. Use a revision's actions to compare it with the current file or restore it.
 
-History lives in the editor's workspace-scoped extension `storageUri`, outside the project, as a schema-versioned JSON index plus immutable SHA-256-addressed snapshot files. In VS Code this is under the user-data `workspaceStorage` directory for the workspace and extension. PromptTrace recovers from a malformed or incomplete primary index using its last complete backup and reports the recovery.
+Plan Tracker records initial matching files as baselines. Content-identical saves do not create duplicate revisions.
 
-Open the PromptTrace Activity Bar view to browse prompt-level Changes and unassigned revisions grouped by file. Select a revision to compare it with its predecessor, or use its inline action to compare it with the current workspace file. Stored snapshots open through a read-only virtual-document provider in VS Code's native side-by-side diff editor.
+### Restoring a revision
 
-Use **Restore Revision** from a revision's context menu to recover that content. PromptTrace shows the recorded path, revision time, and overwrite consequence before proceeding, captures the current on-disk content as a final safety snapshot, and offers a post-restore diff. It refuses to overwrite an editor with unsaved changes. A missing file (and missing parent folders) is recreated at its recorded historical path; PromptTrace never guesses that a differently named file is its renamed destination. Read or write permission failures leave the file unchanged where possible and retain any safety snapshot already captured.
+Choose **Restore Revision** from a revision's context menu. Plan Tracker shows the target and consequence before writing, refuses to overwrite a dirty editor, and records the current on-disk content as a safety snapshot first. Restoring a historical path recreates that path when it is missing; Plan Tracker does not guess renamed destinations.
 
-Claude Code `UserPromptSubmit` and `Stop` hook payloads are normalized behind a provider-neutral adapter. All revisions between those boundaries are shown as one Change with a net before/after diff per file. Prompt text is not stored by default; manual edits remain `unassigned`, interrupted sessions remain recoverable, and overlapping turns are labeled `ambiguous`.
+### Deleting history
 
-The settings are:
+Run **Plan Tracker: Delete Workspace History** from the Command Palette. After confirmation, Plan Tracker permanently removes that workspace's stored revisions, snapshots, and backup indexes, then records current matching files as fresh baselines.
 
-- `promptTrace.enabled`
-- `promptTrace.include` (defaults to Markdown and `.markdown` files)
-- `promptTrace.exclude` (defaults to Git, dependency, vendor, build, and PromptTrace data folders)
-- `promptTrace.debounceMilliseconds` (filesystem-event coalescing; editor saves are captured immediately)
-- `promptTrace.maxAgeDays` (defaults to 90; `0` disables age retention)
-- `promptTrace.maxStorageMegabytes` (defaults to 500 MiB; `0` disables size retention)
+## Agent attribution
 
-Retention runs at startup and when either retention setting changes. Old revisions and completed Changes are removed first; the latest state of every tracked path and active prompt baselines are always preserved. If current heads alone exceed the size limit, PromptTrace keeps them and shows a warning.
+File history works without an agent integration and such revisions are shown as unassigned.
 
-## Privacy and deletion
+Plan Tracker currently contains experimental support for grouping revisions between Claude Code `UserPromptSubmit` and `Stop` lifecycle events. The extension does not yet provide a user-facing hook installer, so another integration must deliver those events to `planTracker.handleClaudeHook`. Prompt text is omitted by default.
 
-All snapshots and metadata remain local in the editor's workspace storage. Snapshot contents are not redacted: anything in a tracked file is stored verbatim. Prompt text is omitted by default, but provider/session identifiers, timestamps, paths, and attribution state are metadata. Exclude sensitive paths before editing them; changing exclusions does not erase existing history.
+## Configuration
 
-Run **PromptTrace: Delete Workspace History** to permanently remove that workspace's snapshots, index, pending file, and backup index. The command requires confirmation, then records current matching files as fresh baselines. Deleting history cannot be undone by PromptTrace.
+The following settings are available under `planTracker`:
 
-## Limitations
+- `enabled`: enables capture for the editor window.
+- `include`: workspace-relative file patterns to capture.
+- `exclude`: patterns that must not be captured.
+- `debounceMilliseconds`: coalesces noisy filesystem events.
+- `maxAgeDays`: removes old history after the configured number of days; `0` disables age retention.
+- `maxStorageMegabytes`: limits referenced snapshot storage; `0` disables size retention.
 
-- Markdown and `.markdown` files are the default scope; binary history is unsupported.
-- Attribution depends on valid Claude Code lifecycle hooks and is marked ambiguous when turns overlap.
-- Rename destinations are not inferred during restore.
-- Retention cannot force current heads below the configured size cap.
-- History is local per editor workspace and is not synchronized.
-- Cursor uses the VS Code extension API, but each release must still be smoke-tested separately in Cursor.
+Current file heads and active agent-turn baselines are preserved even when they exceed a retention limit.
+
+## Storage and privacy
+
+History is stored outside the project in VS Code's workspace-scoped extension storage. It consists of a schema-versioned JSON index and content-addressed snapshot files. Plan Tracker attempts to recover a malformed primary index from its last complete backup.
+
+Snapshot contents are stored verbatim and are not redacted. Paths, timestamps, provider/session identifiers, and attribution state may also be stored. Exclude sensitive files before editing them; adding an exclusion later does not erase existing history. Use the deletion command to remove previously captured data.
+
+## Current limitations
+
+- The project is an early version and has not received broad real-world testing.
+- Markdown is the default supported content type; binary history is unsupported.
+- Agent attribution requires an external lifecycle-event integration.
+- Overlapping or incomplete agent turns may be marked ambiguous or interrupted.
+- History is local to each VS Code workspace and is not synchronized.
+- Retention cannot reduce storage below the size required by current file heads.
+- Cursor may work through VS Code API compatibility, but VS Code is the only required validation target.
 
 ## Troubleshooting
 
-- If no history appears, confirm the workspace is trusted/open, `promptTrace.enabled` is true, and include/exclude patterns match the file.
-- If comparison reports an unavailable snapshot, the snapshot file is missing or unreadable. Saving an unchanged current file repairs its current content-addressed snapshot; older unavailable content cannot be reconstructed.
-- If startup reports backup recovery, inspect free disk space and permissions before continuing. The repaired primary index is written automatically.
-- Restore refuses dirty editors. Save or revert the file and retry.
-- Use **Developer: Show Logs...** and choose the Extension Host log for activation or filesystem errors.
+- If history is empty, verify that a workspace is open, `planTracker.enabled` is enabled, and the include/exclude patterns match the file.
+- If restore is refused, save or revert unsaved editor changes and try again.
+- If a snapshot is unavailable, saving an unchanged current file can repair its current content-addressed snapshot; unavailable older content cannot be reconstructed.
+- If backup recovery is reported, check available disk space and filesystem permissions.
+- For activation or filesystem errors, run **Developer: Show Logs...** and inspect the Extension Host log.
 
 ## Development
 
@@ -62,9 +111,7 @@ npm run check
 npm run test:vscode
 ```
 
-Press `F5` in VS Code or Cursor and choose **Run PromptTrace Extension** to launch an Extension Development Host. In that host, open the Command Palette and run **PromptTrace: Run Smoke Test**.
-
-`npm run test:vscode` uses VS Code's official Electron test harness to run capture, restart, timeline, Claude attribution, and safe-restore validation in isolated VS Code processes.
+Press `F5` and choose **Run Plan Tracker Extension** to launch an Extension Development Host. Run **Plan Tracker: Run Smoke Test** from its Command Palette to verify activation.
 
 Create an installable VSIX with:
 
@@ -72,55 +119,6 @@ Create an installable VSIX with:
 npm run package
 ```
 
-## Manual Phase 0 checklist
+## License
 
-Run the following in both VS Code and Cursor:
-
-- [ ] Open this repository and run `npm install` followed by `npm run check`.
-- [ ] Press `F5`; confirm an Extension Development Host opens without an activation error.
-- [ ] In the development host, run **PromptTrace: Run Smoke Test** from the Command Palette.
-- [ ] Confirm the notification says **PromptTrace is active.**
-- [ ] Set `promptTrace.enabled` to `false`, rerun the command, and confirm the disabled notification appears.
-- [ ] Run `npm run package`, install the resulting `prompttrace.vsix`, and repeat the smoke command.
-
-## Manual Phase 1 checklist
-
-- [ ] Launch an Extension Development Host on a workspace containing an existing Markdown file; verify activation creates a baseline but no user-edit revision.
-- [ ] Save distinct empty, Unicode, and large-file states, including several rapid saves.
-- [ ] Create, rename, and delete Markdown files, and edit one outside the editor.
-- [ ] Verify excluded folders do not appear in the history index.
-- [ ] Reload the Extension Development Host, make another edit, and verify all distinct saved snapshots remain in order.
-- [ ] Repeat the restart/capture scenario in Cursor before declaring cross-editor validation complete.
-
-## Manual Phase 2 checklist
-
-- [ ] Open the PromptTrace Activity Bar view and confirm tracked files and newest-first revision labels appear.
-- [ ] Select baseline, edited, renamed, and deleted revisions and verify the native diff shows the correct before/after contents.
-- [ ] Use **Compare with Current File** on an older revision and verify the right side is the current workspace file.
-- [ ] Confirm stored snapshot editors are read-only and missing current files produce an actionable error.
-
-## Manual Phase 3 checklist
-
-- [ ] Send sanitized `UserPromptSubmit` and `Stop` payloads through `promptTrace.handleClaudeHook` around a Claude turn.
-- [ ] Confirm repeated writes to one Markdown file appear as one completed Change with one net diff.
-- [ ] Confirm a prompt touching multiple Markdown files has one file entry for each final net change.
-- [ ] Make a manual edit after the turn and confirm it remains unassigned.
-- [ ] End a session without `Stop` and confirm the active Change is visibly interrupted; overlap two starts and confirm ambiguity is visible.
-- [ ] Inspect workspace storage and confirm full prompt text was not persisted.
-
-## Manual Phase 4 checklist
-
-- [ ] Restore an older revision and confirm the dialog names the file, revision time, and overwrite consequence.
-- [ ] Choose **Compare Restore** after success and inspect the safety-snapshot-to-restored-file diff.
-- [ ] Restore the safety revision and verify the pre-restore contents return exactly.
-- [ ] Try restore with unsaved editor changes and verify PromptTrace refuses without changing the file.
-- [ ] Rename or delete a tracked file, then restore its earlier revision and verify the historical path is recreated without changing the renamed file.
-- [ ] Try restoring to a location without write permission and verify the failure is actionable and the safety snapshot remains available.
-
-## Manual Phase 5 checklist (VS Code)
-
-- [ ] Change both retention settings and confirm old history is pruned while current file heads remain comparable/restorable.
-- [ ] Run **PromptTrace: Delete Workspace History**, cancel once, then confirm once; verify old snapshots and attribution disappear and current files become fresh baselines.
-- [ ] Open a multi-root workspace, including roots with the same display name, and verify their histories remain distinct.
-- [ ] Corrupt a disposable test index and verify backup recovery is reported without an activation failure.
-- [ ] Install the packaged VSIX in current VS Code and rerun capture, compare, restore, retention, and deletion scenarios.
+Plan Tracker is available under the [MIT License](LICENSE).

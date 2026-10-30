@@ -4,24 +4,24 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
 
-import type { PromptTraceApi } from "../extension";
+import type { PlanTrackerApi } from "../extension";
 import { SnapshotStore, hashContent } from "../history";
 import { RestoreService, RestoreUI } from "../restore";
 import { normalizeRelativePath, workspaceStorageKey } from "../workspacePath";
 
-const EXTENSION_ID = "prompttrace-local.prompttrace";
+const EXTENSION_ID = "MonitKorn.plan-tracker";
 const TIMEOUT_MS = 10_000;
 
 export async function run(): Promise<void> {
   const folder = vscode.workspace.workspaceFolders?.[0];
   assert.ok(folder, "The integration workspace must be open");
 
-  const extension = vscode.extensions.getExtension<PromptTraceApi>(EXTENSION_ID);
+  const extension = vscode.extensions.getExtension<PlanTrackerApi>(EXTENSION_ID);
   assert.ok(extension, `Extension ${EXTENSION_ID} was not discovered`);
   const api = await extension.activate();
-  assert.ok(api, "PromptTrace did not return its history API");
+  assert.ok(api, "Plan Tracker did not return its history API");
 
-  const phase = process.env["PROMPTTRACE_TEST_PHASE"];
+  const phase = process.env["PLAN_TRACKER_TEST_PHASE"];
   if (phase === "capture") {
     await runCapturePhase(folder, api);
   } else if (phase === "restart") {
@@ -36,8 +36,8 @@ export async function run(): Promise<void> {
     await runHardeningPhase();
   } else if (phase === "package-smoke") {
     const commands = await vscode.commands.getCommands(true);
-    assert.ok(commands.includes("promptTrace.runSmokeTest"));
-    assert.ok(commands.includes("promptTrace.deleteWorkspaceHistory"));
+    assert.ok(commands.includes("planTracker.runSmokeTest"));
+    assert.ok(commands.includes("planTracker.deleteWorkspaceHistory"));
     assert.ok(api.getHistoryIndex().schemaVersion === 2);
   } else {
     assert.fail(`Unknown integration phase: ${String(phase)}`);
@@ -46,9 +46,9 @@ export async function run(): Promise<void> {
 
 async function runHardeningPhase(): Promise<void> {
   const commands = await vscode.commands.getCommands(true);
-  assert.ok(commands.includes("promptTrace.deleteWorkspaceHistory"));
+  assert.ok(commands.includes("planTracker.deleteWorkspaceHistory"));
 
-  const root = await mkdtemp(path.join(tmpdir(), "prompttrace-hardening-test-"));
+  const root = await mkdtemp(path.join(tmpdir(), "plan-tracker-hardening-test-"));
   try {
     const store = new SnapshotStore(root);
     await store.initialize();
@@ -70,7 +70,7 @@ async function runHardeningPhase(): Promise<void> {
     assert.equal(store.getIndex().revisions.filter((revision) => revision.relativePath === "workspace/history.md").length, 1);
     assert.equal(store.getHead("workspace/large.md")?.snapshotId, hashContent(largeContent));
     assert.equal(retained.limitSatisfied, true);
-    console.log(`PromptTrace Phase 5 measurements: ${Buffer.byteLength(largeContent)}-byte file captured in ${largeMilliseconds} ms; 200 revisions captured in ${historyMilliseconds} ms.`);
+    console.log(`Plan Tracker Phase 5 measurements: ${Buffer.byteLength(largeContent)}-byte file captured in ${largeMilliseconds} ms; 200 revisions captured in ${historyMilliseconds} ms.`);
 
     const missingSnapshot = store.getHead("workspace/history.md")?.snapshotId;
     assert.ok(missingSnapshot);
@@ -86,7 +86,7 @@ async function runHardeningPhase(): Promise<void> {
     await rm(root, { recursive: true, force: true });
   }
 
-  const migrationRoot = await mkdtemp(path.join(tmpdir(), "prompttrace-migration-test-"));
+  const migrationRoot = await mkdtemp(path.join(tmpdir(), "plan-tracker-migration-test-"));
   try {
     await mkdir(path.join(migrationRoot, "snapshots"), { recursive: true });
     await writeFile(path.join(migrationRoot, "history-v1.json"), JSON.stringify({
@@ -125,9 +125,9 @@ async function runHardeningPhase(): Promise<void> {
 
 async function runRestorePhase(folder: vscode.WorkspaceFolder): Promise<void> {
   const commands = await vscode.commands.getCommands(true);
-  assert.ok(commands.includes("promptTrace.restoreRevision"));
+  assert.ok(commands.includes("planTracker.restoreRevision"));
 
-  const storeRoot = await mkdtemp(path.join(tmpdir(), "prompttrace-restore-test-"));
+  const storeRoot = await mkdtemp(path.join(tmpdir(), "plan-tracker-restore-test-"));
   const originalUri = vscode.Uri.joinPath(folder.uri, "restore-test.md");
   const renamedUri = vscode.Uri.joinPath(folder.uri, "restore-test-renamed.md");
   const storedPath = `${folder.name}/restore-test.md`;
@@ -199,7 +199,7 @@ async function runRestorePhase(folder: vscode.WorkspaceFolder): Promise<void> {
   }
 }
 
-async function runAttributionPhase(folder: vscode.WorkspaceFolder, api: PromptTraceApi): Promise<void> {
+async function runAttributionPhase(folder: vscode.WorkspaceFolder, api: PlanTrackerApi): Promise<void> {
   const storedPath = `${folder.name}/baseline.md`;
   const uri = vscode.Uri.joinPath(folder.uri, "baseline.md");
   const beforeSnapshotId = api.getHistoryIndex().heads[storedPath]?.snapshotId;
@@ -243,7 +243,7 @@ async function runAttributionPhase(folder: vscode.WorkspaceFolder, api: PromptTr
   assert.equal(api.getHistoryIndex().changes.length, 1);
 }
 
-async function runTimelinePhase(folder: vscode.WorkspaceFolder, api: PromptTraceApi): Promise<void> {
+async function runTimelinePhase(folder: vscode.WorkspaceFolder, api: PlanTrackerApi): Promise<void> {
   const baselinePath = `${folder.name}/baseline.md`;
   const revisions = revisionsFor(api, baselinePath);
   assert.equal(revisions.length, 6, "timeline test requires the persisted Phase 1 revisions");
@@ -252,34 +252,34 @@ async function runTimelinePhase(folder: vscode.WorkspaceFolder, api: PromptTrace
   assert.ok(latest.previousSnapshotId);
 
   const registeredCommands = await vscode.commands.getCommands(true);
-  assert.ok(registeredCommands.includes("promptTrace.compareWithPrevious"));
-  assert.ok(registeredCommands.includes("promptTrace.compareWithCurrent"));
+  assert.ok(registeredCommands.includes("planTracker.compareWithPrevious"));
+  assert.ok(registeredCommands.includes("planTracker.compareWithCurrent"));
 
-  void vscode.commands.executeCommand("promptTrace.compareWithPrevious", latest.id);
+  void vscode.commands.executeCommand("planTracker.compareWithPrevious", latest.id);
   const previousDiff = await waitForDiffTab();
-  assert.equal(previousDiff.original.scheme, "prompttrace-snapshot");
-  assert.equal(previousDiff.modified.scheme, "prompttrace-snapshot");
+  assert.equal(previousDiff.original.scheme, "plan-tracker-snapshot");
+  assert.equal(previousDiff.modified.scheme, "plan-tracker-snapshot");
   const beforeDocument = await vscode.workspace.openTextDocument(previousDiff.original);
   const afterDocument = await vscode.workspace.openTextDocument(previousDiff.modified);
   assert.equal(beforeDocument.getText(), await api.readSnapshot(latest.previousSnapshotId));
   assert.equal(afterDocument.getText(), "after restart\n");
   assert.equal(afterDocument.isDirty, false);
 
-  void vscode.commands.executeCommand("promptTrace.compareWithCurrent", latest.id);
+  void vscode.commands.executeCommand("planTracker.compareWithCurrent", latest.id);
   const currentDiff = await waitForDiffTab("file");
-  assert.equal(currentDiff.original.scheme, "prompttrace-snapshot");
+  assert.equal(currentDiff.original.scheme, "plan-tracker-snapshot");
   assert.equal(currentDiff.modified.scheme, "file");
   assert.equal(currentDiff.modified.fsPath, vscode.Uri.joinPath(folder.uri, "baseline.md").fsPath);
 }
 
-async function runCapturePhase(folder: vscode.WorkspaceFolder, api: PromptTraceApi): Promise<void> {
+async function runCapturePhase(folder: vscode.WorkspaceFolder, api: PlanTrackerApi): Promise<void> {
   const baselinePath = `${folder.name}/baseline.md`;
   const excludedPath = `${folder.name}/node_modules/excluded.md`;
   await waitFor(() => api.getHistoryIndex().heads[baselinePath]?.deleted === false);
   assert.equal(api.getHistoryIndex().heads[excludedPath], undefined);
 
   const baselineUri = vscode.Uri.joinPath(folder.uri, "baseline.md");
-  const states = ["first edit\n", "", "Unicode: café 日本語 ✨\n", `${"large line\n".repeat(100_000)}`];
+  const states = ["first edit\n", "", "Unicode: cafÃ© æ—¥æœ¬èªž âœ¨\n", `${"large line\n".repeat(100_000)}`];
   for (const [index, content] of states.entries()) {
     await vscode.workspace.fs.writeFile(baselineUri, new TextEncoder().encode(content));
     await waitFor(() => revisionsFor(api, baselinePath).length === index + 2);
@@ -304,12 +304,12 @@ async function runCapturePhase(folder: vscode.WorkspaceFolder, api: PromptTraceA
   assert.equal(api.getHistoryIndex().heads[excludedPath], undefined);
 }
 
-async function runRestartPhase(folder: vscode.WorkspaceFolder, api: PromptTraceApi): Promise<void> {
+async function runRestartPhase(folder: vscode.WorkspaceFolder, api: PlanTrackerApi): Promise<void> {
   const baselinePath = `${folder.name}/baseline.md`;
   const revisionsBeforeEdit = revisionsFor(api, baselinePath);
   assert.equal(revisionsBeforeEdit.length, 5, "all baseline and saved states must survive restart");
 
-  const expectedStates = ["baseline\n", "first edit\n", "", "Unicode: café 日本語 ✨\n"];
+  const expectedStates = ["baseline\n", "first edit\n", "", "Unicode: cafÃ© æ—¥æœ¬èªž âœ¨\n"];
   const contents = await Promise.all(revisionsBeforeEdit
     .filter((revision) => revision.snapshotId !== undefined)
     .map((revision) => api.readSnapshot(revision.snapshotId!)));
@@ -323,7 +323,7 @@ async function runRestartPhase(folder: vscode.WorkspaceFolder, api: PromptTraceA
   assert.equal(api.getHistoryIndex().heads[`${folder.name}/node_modules/excluded.md`], undefined);
 }
 
-function revisionsFor(api: PromptTraceApi, relativePath: string): ReturnType<PromptTraceApi["getHistoryIndex"]>["revisions"] {
+function revisionsFor(api: PlanTrackerApi, relativePath: string): ReturnType<PlanTrackerApi["getHistoryIndex"]>["revisions"] {
   return api.getHistoryIndex().revisions.filter((revision) => revision.relativePath === relativePath);
 }
 
@@ -331,7 +331,7 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   const started = Date.now();
   while (!predicate()) {
     if (Date.now() - started > TIMEOUT_MS) {
-      assert.fail("Timed out waiting for PromptTrace history capture");
+      assert.fail("Timed out waiting for Plan Tracker history capture");
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }

@@ -3,9 +3,9 @@ import * as vscode from "vscode";
 import { Change, FileChange, HistoryIndex, Revision, SnapshotStore } from "./history";
 import { resolveStoredWorkspacePath } from "./workspacePath";
 
-export const SNAPSHOT_SCHEME = "prompttrace-snapshot";
-export const COMPARE_PREVIOUS_COMMAND = "promptTrace.compareWithPrevious";
-export const COMPARE_CURRENT_COMMAND = "promptTrace.compareWithCurrent";
+export const SNAPSHOT_SCHEME = "plan-tracker-snapshot";
+export const COMPARE_PREVIOUS_COMMAND = "planTracker.compareWithPrevious";
+export const COMPARE_CURRENT_COMMAND = "planTracker.compareWithCurrent";
 
 type HistoryNode = FileNode | RevisionNode | ChangeNode | ChangeFileNode;
 
@@ -47,12 +47,12 @@ export class HistoryTreeProvider implements vscode.TreeDataProvider<HistoryNode>
   public getTreeItem(element: HistoryNode): vscode.TreeItem {
     if (element.type === "change") {
       const item = new vscode.TreeItem(
-        `Claude Code · ${formatTime(element.change.startedAt)}`,
+        `Claude Code Â· ${formatTime(element.change.startedAt)}`,
         vscode.TreeItemCollapsibleState.Expanded,
       );
       item.id = element.change.id;
-      item.description = `${element.change.attribution} · ${element.change.status}`;
-      item.contextValue = "promptTraceChange";
+      item.description = `${element.change.attribution} Â· ${element.change.status}`;
+      item.contextValue = "planTrackerChange";
       item.iconPath = new vscode.ThemeIcon(element.change.status === "completed" ? "sparkle" : "warning");
       item.tooltip = `${element.change.files.length} file(s)\nAttribution: ${element.change.attribution}\nStatus: ${element.change.status}`;
       return item;
@@ -63,7 +63,7 @@ export class HistoryTreeProvider implements vscode.TreeDataProvider<HistoryNode>
       const item = new vscode.TreeItem(displayPath(element.file.relativePath), vscode.TreeItemCollapsibleState.None);
       item.id = revision.id;
       item.description = workspaceName(element.file.relativePath);
-      item.contextValue = "promptTraceRevision";
+      item.contextValue = "planTrackerRevision";
       item.iconPath = new vscode.ThemeIcon("diff");
       item.command = { command: COMPARE_PREVIOUS_COMMAND, title: "Open prompt diff", arguments: [revision] };
       return item;
@@ -75,7 +75,7 @@ export class HistoryTreeProvider implements vscode.TreeDataProvider<HistoryNode>
         vscode.TreeItemCollapsibleState.Expanded,
       );
       item.description = workspaceName(element.relativePath);
-      item.contextValue = "promptTraceFile";
+      item.contextValue = "planTrackerFile";
       item.iconPath = new vscode.ThemeIcon("markdown");
       item.tooltip = element.relativePath;
       return item;
@@ -87,8 +87,8 @@ export class HistoryTreeProvider implements vscode.TreeDataProvider<HistoryNode>
       vscode.TreeItemCollapsibleState.None,
     );
     item.id = revision.id;
-    item.description = `unassigned • ${revision.kind}`;
-    item.contextValue = "promptTraceRevision";
+    item.description = `unassigned â€¢ ${revision.kind}`;
+    item.contextValue = "planTrackerRevision";
     item.iconPath = new vscode.ThemeIcon(revision.kind === "deleted" ? "trash" : "history");
     item.tooltip = `${revision.relativePath}\n${new Date(revision.recordedAt).toLocaleString()}\nAttribution: unassigned\nKind: ${revision.kind}`;
     item.command = {
@@ -132,7 +132,7 @@ export class SnapshotDocumentProvider implements vscode.TextDocumentContentProvi
       return await this.store.readSnapshot(snapshotId);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`PromptTrace could not read snapshot ${snapshotId}: ${message}`);
+      throw new Error(`Plan Tracker could not read snapshot ${snapshotId}: ${message}`);
     }
   }
 }
@@ -142,12 +142,12 @@ export function registerTimeline(context: vscode.ExtensionContext, store: Snapsh
   const documents = new SnapshotDocumentProvider(store);
   context.subscriptions.push(
     tree,
-    vscode.window.registerTreeDataProvider("promptTrace.history", tree),
+    vscode.window.registerTreeDataProvider("planTracker.history", tree),
     vscode.workspace.registerTextDocumentContentProvider(SNAPSHOT_SCHEME, documents),
     vscode.commands.registerCommand(COMPARE_PREVIOUS_COMMAND, async (input: unknown) => {
       const revision = resolveRevision(input, store.getIndex());
       if (revision === undefined) {
-        await vscode.window.showErrorMessage("PromptTrace could not find that revision. Refresh the History view and try again.");
+        await vscode.window.showErrorMessage("Plan Tracker could not find that revision. Refresh the History view and try again.");
         return;
       }
       const before = snapshotUri(revision.previousSnapshotId, revision.relativePath, "previous");
@@ -156,31 +156,31 @@ export function registerTimeline(context: vscode.ExtensionContext, store: Snapsh
         "vscode.diff",
         before,
         after,
-        `${displayPath(revision.relativePath)} (${revision.kind} ↔ previous)`,
+        `${displayPath(revision.relativePath)} (${revision.kind} â†” previous)`,
       );
     }),
     vscode.commands.registerCommand(COMPARE_CURRENT_COMMAND, async (input: unknown) => {
       const revision = resolveRevision(input, store.getIndex());
       if (revision === undefined) {
-        await vscode.window.showErrorMessage("PromptTrace could not find that revision. Refresh the History view and try again.");
+        await vscode.window.showErrorMessage("Plan Tracker could not find that revision. Refresh the History view and try again.");
         return;
       }
       const current = resolveStoredWorkspacePath(revision.relativePath);
       if (current === undefined) {
-        await vscode.window.showErrorMessage(`PromptTrace cannot compare ${displayPath(revision.relativePath)} because its workspace folder is not open.`);
+        await vscode.window.showErrorMessage(`Plan Tracker cannot compare ${displayPath(revision.relativePath)} because its workspace folder is not open.`);
         return;
       }
       try {
         await vscode.workspace.fs.stat(current);
       } catch {
-        await vscode.window.showErrorMessage(`PromptTrace cannot compare ${displayPath(revision.relativePath)} because the current file does not exist.`);
+        await vscode.window.showErrorMessage(`Plan Tracker cannot compare ${displayPath(revision.relativePath)} because the current file does not exist.`);
         return;
       }
       await vscode.commands.executeCommand(
         "vscode.diff",
         snapshotUri(revision.snapshotId, revision.relativePath, revision.kind),
         current,
-        `${displayPath(revision.relativePath)} (${revision.kind} ↔ current)`,
+        `${displayPath(revision.relativePath)} (${revision.kind} â†” current)`,
       );
     }),
   );

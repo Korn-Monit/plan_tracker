@@ -7,7 +7,7 @@ import test from "node:test";
 import { HISTORY_SCHEMA_VERSION, SnapshotStore, hashContent } from "../history";
 
 async function withStore(run: (store: SnapshotStore, root: string) => Promise<void>): Promise<void> {
-  const root = await mkdtemp(path.join(tmpdir(), "prompttrace-test-"));
+  const root = await mkdtemp(path.join(tmpdir(), "plan-tracker-test-"));
   try {
     const store = new SnapshotStore(root);
     await store.initialize();
@@ -21,13 +21,13 @@ void test("stores ordered distinct snapshots and suppresses duplicates", async (
   await withStore(async (store) => {
     const baseline = await store.recordContent("workspace/plan.md", "one", "baseline");
     const duplicate = await store.recordContent("workspace/plan.md", "one", "edited");
-    const edit = await store.recordContent("workspace/plan.md", "two ✨", "edited");
+    const edit = await store.recordContent("workspace/plan.md", "two âœ¨", "edited");
 
     assert.equal(duplicate, undefined);
     assert.equal(baseline?.kind, "baseline");
     assert.equal(edit?.previousSnapshotId, hashContent("one"));
     assert.equal(store.getIndex().revisions.length, 2);
-    assert.equal(await store.readSnapshot(hashContent("two ✨")), "two ✨");
+    assert.equal(await store.readSnapshot(hashContent("two âœ¨")), "two âœ¨");
   });
 });
 
