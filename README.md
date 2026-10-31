@@ -2,7 +2,7 @@
 
 Plan Tracker is a local-first VS Code extension that keeps a recoverable history of Markdown files and lets you inspect changes with VS Code's native diff editor. It is designed to remain useful whether a change came from a person, an AI coding agent, or another tool.
 
-> **Early version:** Plan Tracker is still under active development. Features, storage formats, commands, and configuration may change. Test restore workflows on non-critical files before relying on it as your only recovery mechanism.
+> **Early release:** Plan Tracker is usable now and its core functionality is complete, but it has not yet been tested in detail across every workflow and environment. You may encounter bugs, and additional features may be added in future releases. 
 
 Plan Tracker is currently focused on making local Markdown history simple, visible, and safe to explore.
 
@@ -35,10 +35,17 @@ This workflow does not require agent attribution. Plan Tracker records saved Mar
 
 ## Installation
 
-1. Open the Command Palette with `Ctrl+Shift+P` on Windows/Linux or `Cmd+Shift+P` on macOS.
-2. Run **Extensions: Install from VSIX...**.
-3. Select the packaged Plan Tracker `.vsix` file.
-4. Reload VS Code when prompted.
+### Install from VS Code
+
+1. Open the **Extensions** view in VS Code with `Ctrl+Shift+X` on Windows/Linux or `Cmd+Shift+X` on macOS.
+2. Search for **Plan Tracker**.
+3. Select **Plan Tracker** published by **MonitKorn**, then choose **Install**.
+
+You can also install it from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=MonitKorn.plan-tracker).
+
+### Install a local VSIX
+
+To test a packaged development build, open the Command Palette, run **Extensions: Install from VSIX...**, select the Plan Tracker `.vsix` file, and reload VS Code when prompted.
 
 ## Getting started
 
