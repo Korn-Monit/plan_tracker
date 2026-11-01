@@ -285,6 +285,22 @@ export class SnapshotStore {
     });
   }
 
+  /** Updates the current head after a file is re-included without inventing a revision. */
+  public rebaseContent(relativePath: string, content: string): Promise<void> {
+    return this.enqueue(async () => {
+      const snapshotId = hashContent(content);
+      await this.writeSnapshot(snapshotId, content);
+      const head = { snapshotId, deleted: false };
+      this.index.heads[relativePath] = head;
+      const active = this.activeChange();
+      if (active?.baselineHeads !== undefined) {
+        active.baselineHeads[relativePath] = { ...head };
+      }
+      await this.persist();
+      this.notifyChanged();
+    });
+  }
+
   public recordDeletion(relativePath: string): Promise<Revision | undefined> {
     return this.enqueue(async () => {
       const current = this.index.heads[relativePath];

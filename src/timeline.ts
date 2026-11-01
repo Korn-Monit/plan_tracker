@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 
 import { Change, FileChange, HistoryIndex, Revision, SnapshotStore } from "./history";
+import { filterHistoryIndex } from "./historyScope";
+import { WorkspaceScope } from "./scope";
 import { resolveStoredWorkspacePath } from "./workspacePath";
 
 export const SNAPSHOT_SCHEME = "plan-tracker-snapshot";
@@ -33,14 +35,20 @@ interface ChangeFileNode {
 export class HistoryTreeProvider implements vscode.TreeDataProvider<HistoryNode>, vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<HistoryNode | undefined>();
   private readonly storeSubscription: { dispose(): void };
+  private readonly scopeSubscription: { dispose(): void };
   public readonly onDidChangeTreeData = this.changed.event;
 
-  public constructor(private readonly store: SnapshotStore) {
+  public constructor(
+    private readonly store: SnapshotStore,
+    private readonly scopeMatcher: WorkspaceScope,
+  ) {
     this.storeSubscription = store.onDidChange(() => this.changed.fire(undefined));
+    this.scopeSubscription = scopeMatcher.onDidChange(() => this.changed.fire(undefined));
   }
 
   public dispose(): void {
     this.storeSubscription.dispose();
+    this.scopeSubscription.dispose();
     this.changed.dispose();
   }
 
@@ -100,7 +108,7 @@ export class HistoryTreeProvider implements vscode.TreeDataProvider<HistoryNode>
   }
 
   public getChildren(element?: HistoryNode): HistoryNode[] {
-    const index = this.store.getIndex();
+    const index = filterHistoryIndex(this.store.getIndex(), (path) => this.scopeMatcher.includesStoredPath(path));
     if (element === undefined) {
       const changes: ChangeNode[] = [...index.changes].reverse().map((change) => ({ type: "change", change }));
       const files: FileNode[] = pathsWithUnassignedRevisions(index)
@@ -132,13 +140,13 @@ export class SnapshotDocumentProvider implements vscode.TextDocumentContentProvi
       return await this.store.readSnapshot(snapshotId);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Plan Tracker could not read snapshot ${snapshotId}: ${message}`);
+      throw new Error(`Plan Tracker could not read snapshot ${snapshotId}: ${message}`, { cause: error });
     }
   }
 }
 
-export function registerTimeline(context: vscode.ExtensionContext, store: SnapshotStore): void {
-  const tree = new HistoryTreeProvider(store);
+export function registerTimeline(context: vscode.ExtensionContext, store: SnapshotStore, scopeMatcher: WorkspaceScope): void {
+  const tree = new HistoryTreeProvider(store, scopeMatcher);
   const documents = new SnapshotDocumentProvider(store);
   context.subscriptions.push(
     tree,
@@ -219,7 +227,9 @@ function snapshotIdFromUri(uri: vscode.Uri): string | undefined {
   return /^[a-f\d]{64}$/u.test(snapshotId) ? snapshotId : undefined;
 }
 
-function pathsWithUnassignedRevisions(index: Readonly<HistoryIndex>): string[] {
+function pathsWithUnassignedRevisions(
+  index: Readonly<HistoryIndex>,
+): string[] {
   return [...new Set(index.revisions
     .filter((revision) => revision.changeId === undefined)
     .map((revision) => revision.relativePath))]

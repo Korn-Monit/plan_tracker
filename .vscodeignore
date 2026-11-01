@@ -1,12 +1,12 @@
 .git/**
 .gitignore
+.plantrackerignore
 .github/**
 .promptrail/**
 .vscode/**
 .vscode-test/**
 src/**
 scripts/**
-node_modules/**
 docs/**
 *.vsix
 *.log

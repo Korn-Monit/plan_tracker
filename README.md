@@ -57,6 +57,26 @@ To test a packaged development build, open the Command Palette, run **Extensions
 
 Plan Tracker records initial matching files as baselines. Content-identical saves do not create duplicate revisions.
 
+### Limit tracked Markdown with `.plantrackerignore`
+
+Add an optional `.plantrackerignore` file at a workspace-folder root to hide selected Markdown files from the History view and stop capturing new revisions for them. Each folder in a multi-root workspace uses its own file. Paths are relative to that folder and use standard Gitignore syntax, including comments, escaped leading `#` and `!`, root-anchored paths, directory rules, `*`, `?`, `**`, `!` re-inclusion, and last-matching-rule-wins ordering.
+
+```gitignore
+# Ignore one file
+notes/private.md
+
+# Ignore Markdown files in a folder at the workspace root
+/archive/*.md
+
+# Ignore generated folders anywhere
+**/generated/
+
+# Keep one file from an otherwise ignored area
+!/archive/keep.md
+```
+
+Changes to `.plantrackerignore` take effect without restarting VS Code. Exclusion never deletes stored history: re-including a file makes its retained history visible and resumes capture from its current content without creating a revision for edits made while it was excluded. Plan Tracker's storage and known internal paths remain excluded even if a `!` rule attempts to include them. The ignore file narrows Markdown scope only; it cannot opt other file types into tracking.
+
 ### Restoring a revision
 
 Choose **Restore Revision** from a revision's context menu. Plan Tracker shows the target and consequence before writing, refuses to overwrite a dirty editor, and records the current on-disk content as a safety snapshot first. Restoring a historical path recreates that path when it is missing; Plan Tracker does not guess renamed destinations.

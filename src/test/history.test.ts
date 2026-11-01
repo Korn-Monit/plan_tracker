@@ -61,6 +61,19 @@ void test("persists schema-versioned history across restart", async () => {
   });
 });
 
+void test("re-bases a re-included file without manufacturing a revision", async () => {
+  await withStore(async (store) => {
+    await store.recordContent("workspace/plan.md", "before exclusion", "baseline");
+    const revisionCount = store.getIndex().revisions.length;
+    await store.rebaseContent("workspace/plan.md", "changed while excluded");
+    assert.equal(store.getIndex().revisions.length, revisionCount);
+    assert.equal(store.getHead("workspace/plan.md")?.snapshotId, hashContent("changed while excluded"));
+    assert.equal(await store.readSnapshot(hashContent("before exclusion")), "before exclusion");
+    await store.recordContent("workspace/plan.md", "after re-inclusion", "edited");
+    assert.equal(store.getIndex().revisions.length, revisionCount + 1);
+  });
+});
+
 void test("recovers the last complete index when the primary index is corrupt", async () => {
   await withStore(async (store, root) => {
     await store.recordContent("workspace/plan.md", "first", "baseline");

@@ -34,6 +34,8 @@ export async function run(): Promise<void> {
     await runRestorePhase(folder);
   } else if (phase === "hardening") {
     await runHardeningPhase();
+  } else if (phase === "scope") {
+    await runScopePhase(folder, api);
   } else if (phase === "package-smoke") {
     const commands = await vscode.commands.getCommands(true);
     assert.ok(commands.includes("planTracker.runSmokeTest"));
@@ -42,6 +44,50 @@ export async function run(): Promise<void> {
   } else {
     assert.fail(`Unknown integration phase: ${String(phase)}`);
   }
+}
+
+async function runScopePhase(folder: vscode.WorkspaceFolder, api: PlanTrackerApi): Promise<void> {
+  const privatePath = `${folder.name}/scope-private.md`;
+  const includedPath = `${folder.name}/scope-included.md`;
+  const privateUri = vscode.Uri.joinPath(folder.uri, "scope-private.md");
+  const includedUri = vscode.Uri.joinPath(folder.uri, "scope-included.md");
+  const ignoreUri = vscode.Uri.joinPath(folder.uri, ".plantrackerignore");
+
+  await vscode.workspace.fs.writeFile(privateUri, new TextEncoder().encode("private baseline\n"));
+  await vscode.workspace.fs.writeFile(includedUri, new TextEncoder().encode("included baseline\n"));
+  await waitFor(() => api.getHistoryIndex().heads[privatePath]?.deleted === false
+    && api.getHistoryIndex().heads[includedPath]?.deleted === false);
+  const privateRevisionCount = revisionsFor(api, privatePath).length;
+  const includedRevisionCount = revisionsFor(api, includedPath).length;
+
+  await vscode.workspace.fs.writeFile(ignoreUri, new TextEncoder().encode("scope-private.md\n"));
+  await waitFor(() => !api.isPathIncluded(privatePath));
+  assert.equal(api.getVisibleHistoryIndex().revisions.some((revision) => revision.relativePath === privatePath), false);
+
+  await api.handleClaudeHook({ session_id: "scope-mixed", hook_event_name: "UserPromptSubmit" });
+  await vscode.workspace.fs.writeFile(privateUri, new TextEncoder().encode("changed while excluded\n"));
+  await vscode.workspace.fs.writeFile(includedUri, new TextEncoder().encode("included agent edit\n"));
+  await waitFor(() => revisionsFor(api, includedPath).length === includedRevisionCount + 1);
+  await api.handleClaudeHook({ session_id: "scope-mixed", hook_event_name: "Stop", stop_hook_active: false });
+  assert.equal(revisionsFor(api, privatePath).length, privateRevisionCount);
+  const mixed = api.getVisibleHistoryIndex().changes.at(-1);
+  assert.deepEqual(mixed?.files.map((file) => file.relativePath), [includedPath]);
+
+  const visibleChangeCount = api.getVisibleHistoryIndex().changes.length;
+  await api.handleClaudeHook({ session_id: "scope-private-only", hook_event_name: "UserPromptSubmit" });
+  await vscode.workspace.fs.writeFile(privateUri, new TextEncoder().encode("second excluded edit\n"));
+  await api.handleClaudeHook({ session_id: "scope-private-only", hook_event_name: "Stop", stop_hook_active: false });
+  assert.equal(api.getVisibleHistoryIndex().changes.length, visibleChangeCount, "an excluded-only prompt must not show an empty Change");
+
+  await vscode.workspace.fs.delete(ignoreUri);
+  await waitFor(() => api.isPathIncluded(privatePath));
+  await waitFor(() => api.getHistoryIndex().heads[privatePath]?.snapshotId === hashContent("second excluded edit\n"));
+  assert.equal(revisionsFor(api, privatePath).length, privateRevisionCount, "re-inclusion must not manufacture a revision");
+  assert.equal(api.getVisibleHistoryIndex().revisions.some((revision) => revision.relativePath === privatePath), true);
+
+  await vscode.workspace.fs.writeFile(privateUri, new TextEncoder().encode("edit after re-inclusion\n"));
+  await waitFor(() => revisionsFor(api, privatePath).length === privateRevisionCount + 1);
+  assert.equal(revisionsFor(api, privatePath).at(-1)?.previousSnapshotId, hashContent("second excluded edit\n"));
 }
 
 async function runHardeningPhase(): Promise<void> {
@@ -135,16 +181,17 @@ async function runRestorePhase(folder: vscode.WorkspaceFolder): Promise<void> {
   const errors: string[] = [];
   const successes: string[] = [];
   const ui: RestoreUI = {
-    async confirm(message, detail) {
+    confirm(message, detail) {
       confirmations.push({ message, detail });
-      return true;
+      return Promise.resolve(true);
     },
-    async success(message) {
+    success(message) {
       successes.push(message);
-      return false;
+      return Promise.resolve(false);
     },
-    async error(message) {
+    error(message) {
       errors.push(message);
+      return Promise.resolve();
     },
   };
 

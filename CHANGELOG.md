@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- Added per-workspace `.plantrackerignore` files with Gitignore-compatible rules and live reloads.
+- Applied one Markdown scope consistently to capture, agent-attributed changes, and History.
+- Preserved hidden history and prevented false revisions when excluded files are re-included.
+- Fixed VSIX packaging so the Gitignore parser runtime dependency is included.
+
 ## 0.1.0
 
 Initial public preview release.

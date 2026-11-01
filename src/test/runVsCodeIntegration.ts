@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   await writeFile(path.join(workspacePath, "node_modules", "excluded.md"), "must not be captured\n", "utf8");
 
   const phases = process.argv[3]?.split(",")
-    ?? ["capture", "restart", "timeline", "attribution", "restore", "hardening"];
+    ?? ["capture", "restart", "timeline", "attribution", "restore", "hardening", "scope"];
   for (const phase of phases) {
     await runTests({
       extensionDevelopmentPath: extensionPath,

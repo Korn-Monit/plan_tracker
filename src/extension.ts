@@ -3,8 +3,10 @@ import * as vscode from "vscode";
 import { ClaudeCodeAdapter, SessionCoordinator } from "./agent";
 import { RevisionCapture } from "./capture";
 import { HistoryIndex, SnapshotStore } from "./history";
+import { filterHistoryIndex } from "./historyScope";
 import { getSmokeTestMessage } from "./smoke";
 import { RESTORE_COMMAND, RestoreService } from "./restore";
+import { WorkspaceScope } from "./scope";
 import { registerTimeline } from "./timeline";
 
 const SMOKE_TEST_COMMAND = "planTracker.runSmokeTest";
@@ -12,6 +14,8 @@ const DELETE_HISTORY_COMMAND = "planTracker.deleteWorkspaceHistory";
 
 export interface PlanTrackerApi {
   getHistoryIndex(): Readonly<HistoryIndex>;
+  getVisibleHistoryIndex(): Readonly<HistoryIndex>;
+  isPathIncluded(storedPath: string): boolean;
   readSnapshot(snapshotId: string): Promise<string>;
   handleClaudeHook(payload: unknown): Promise<void>;
 }
@@ -44,7 +48,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PlanTr
       await vscode.window.showWarningMessage(store.getRecoveryNotice()!);
     }
     await enforceRetention(store);
-    registerTimeline(context, store);
+    const scopeMatcher = new WorkspaceScope((message) => {
+      void vscode.window.showWarningMessage(message);
+    });
+    await scopeMatcher.initialize();
+    context.subscriptions.push(scopeMatcher);
+    registerTimeline(context, store, scopeMatcher);
     const restore = new RestoreService(store);
     const restoreCommand = vscode.commands.registerCommand(RESTORE_COMMAND, async (input: unknown) => {
       const revision = resolveRevision(input, store.getIndex());
@@ -54,7 +63,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PlanTr
       }
       await restore.restore(revision);
     });
-    const capture = new RevisionCapture(store, (message) => {
+    const capture = new RevisionCapture(store, scopeMatcher, (message) => {
       void vscode.window.showErrorMessage(message);
     });
     await capture.start();
@@ -94,6 +103,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PlanTr
     context.subscriptions.push(capture, claudeHookCommand, restoreCommand, deleteHistoryCommand, retentionConfiguration);
     return {
       getHistoryIndex: () => store.getIndex(),
+      getVisibleHistoryIndex: () => filterHistoryIndex(store.getIndex(), (path) => scopeMatcher.includesStoredPath(path)),
+      isPathIncluded: (storedPath) => scopeMatcher.includesStoredPath(storedPath),
       readSnapshot: (snapshotId) => store.readSnapshot(snapshotId),
       handleClaudeHook,
     };

@@ -1,19 +1,9 @@
 import * as vscode from "vscode";
 
-import { matchesAnyGlob } from "./glob";
 import { SnapshotStore } from "./history";
+import { ScopeChange, WorkspaceScope } from "./scope";
+import { DEFAULT_MARKDOWN_INCLUDES } from "./scopeMatcher";
 import { normalizeRelativePath, storedWorkspacePath, workspaceStorageKey } from "./workspacePath";
-
-const DEFAULT_INCLUDES = ["**/*.md", "**/*.markdown"];
-const DEFAULT_EXCLUDES = [
-  "**/.git/**",
-  "**/node_modules/**",
-  "**/vendor/**",
-  "**/dist/**",
-  "**/build/**",
-  "**/.plan-tracker/**",
-  "**/.vscode-test/**",
-];
 
 interface ScopedPath {
   folder: vscode.WorkspaceFolder;
@@ -24,21 +14,19 @@ interface ScopedPath {
 export class RevisionCapture implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
-  private includes = DEFAULT_INCLUDES;
-  private excludes = DEFAULT_EXCLUDES;
   private disposed = false;
 
   public constructor(
     private readonly store: SnapshotStore,
+    private readonly scopeMatcher: WorkspaceScope,
     private readonly reportError: (message: string) => void,
   ) {}
 
   public async start(): Promise<void> {
-    this.reloadConfiguration();
     await this.scanWorkspace();
 
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
-      for (const include of this.includes) {
+      for (const include of DEFAULT_MARKDOWN_INCLUDES) {
         const watcher = vscode.workspace.createFileSystemWatcher(
           new vscode.RelativePattern(folder, include),
         );
@@ -64,11 +52,7 @@ export class RevisionCapture implements vscode.Disposable {
           void this.captureRename(file.oldUri, file.newUri);
         }
       }),
-      vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration("planTracker")) {
-          this.reloadConfiguration();
-        }
-      }),
+      this.scopeMatcher.onDidChange((event) => { void this.handleScopeChange(event); }),
     );
   }
 
@@ -92,15 +76,9 @@ export class RevisionCapture implements vscode.Disposable {
     await this.scanWorkspace();
   }
 
-  private reloadConfiguration(): void {
-    const configuration = vscode.workspace.getConfiguration("planTracker");
-    this.includes = configuration.get<string[]>("include", DEFAULT_INCLUDES);
-    this.excludes = configuration.get<string[]>("exclude", DEFAULT_EXCLUDES);
-  }
-
-  private async scanWorkspace(): Promise<void> {
+  private async scanWorkspace(previousScope?: ScopeChange): Promise<void> {
     const discovered = new Set<string>();
-    for (const include of this.includes) {
+    for (const include of DEFAULT_MARKDOWN_INCLUDES) {
       const uris = await vscode.workspace.findFiles(include, null);
       for (const uri of uris) {
         const scoped = this.scope(uri);
@@ -112,8 +90,13 @@ export class RevisionCapture implements vscode.Disposable {
         if (content === undefined) {
           continue;
         }
-        const kind = this.store.getHead(scoped.storagePath) === undefined ? "baseline" : "edited";
-        await this.store.recordContent(scoped.storagePath, content, kind);
+        const head = this.store.getHead(scoped.storagePath);
+        if (head !== undefined && previousScope !== undefined
+          && !previousScope.wasStoredPathIncluded(scoped.storagePath)) {
+          await this.store.rebaseContent(scoped.storagePath, content);
+        } else {
+          await this.store.recordContent(scoped.storagePath, content, head === undefined ? "baseline" : "edited");
+        }
       }
     }
 
@@ -122,6 +105,16 @@ export class RevisionCapture implements vscode.Disposable {
         await this.store.recordDeletion(storedPath);
       }
     }
+  }
+
+  private async handleScopeChange(event: ScopeChange): Promise<void> {
+    for (const [storedPath, timer] of this.timers) {
+      if (!this.scopeMatcher.includesStoredPath(storedPath)) {
+        clearTimeout(timer);
+        this.timers.delete(storedPath);
+      }
+    }
+    await this.scanWorkspace(event);
   }
 
   private scheduleCapture(uri: vscode.Uri): void {
@@ -197,7 +190,7 @@ export class RevisionCapture implements vscode.Disposable {
       return undefined;
     }
     const relativePath = normalizeRelativePath(pathWithinFolder(folder, uri));
-    if (!matchesAnyGlob(relativePath, this.includes) || matchesAnyGlob(relativePath, this.excludes)) {
+    if (!this.scopeMatcher.includesUri(uri)) {
       return undefined;
     }
     return {
@@ -213,9 +206,7 @@ export class RevisionCapture implements vscode.Disposable {
       if (!storedPath.startsWith(prefix)) {
         return false;
       }
-      const relativePath = storedPath.slice(prefix.length);
-      return matchesAnyGlob(relativePath, this.includes)
-        && !matchesAnyGlob(relativePath, this.excludes);
+      return this.scopeMatcher.includesStoredPath(storedPath);
     });
   }
 
